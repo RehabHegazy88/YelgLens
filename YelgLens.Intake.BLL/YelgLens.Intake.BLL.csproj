@@ -6,17 +6,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- ملفات اللغة تُشحن مع البناء. حزمة Tesseract.Data.English تتكفّل
-         بالإنجليزية، والعربية تُضاف هنا: أوراق الموردين عربية، وقراءتها
-         بالإنجليزية وحدها هي ما كان يُسقط المحرك المحلي فيُحال كل مستند
-         إلى السحابة. -->
-    <Content Include="tessdata\*.traineddata">
-      <Link>tessdata\%(FileName)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\YelgLens.Intake.Model\YelgLens.Intake.Model.csproj" />
     <ProjectReference Include="..\YelgLens.Intake.DAL\YelgLens.Intake.DAL.csproj" />
   </ItemGroup>
