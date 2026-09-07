@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using YelgLens.Intake.BLL.Services.Export;
 using YelgLens.Intake.BLL.Services.Extraction;
@@ -31,6 +32,20 @@ builder.Services.AddDbContext<MainDbContext>(o => o.UseNpgsql(connectionString))
 
 builder.Services.AddScoped<IUnitOfWork<MainDbContext>>(ctx =>
     new EFUnitOfWork<MainDbContext>(ctx.GetRequiredService<MainDbContext>()));
+
+// ---------- مفاتيح حماية البيانات ----------
+// بها تُشفَّر كعكة الدخول ورمز الـ antiforgery. ومستقرّها الافتراضي مجلد
+// المستخدم، وهو محجوبٌ عن الخدمة على الخادم بـ ProtectHome. فلو تُركت هناك
+// وُلّدت مفاتيح جديدة عند كل إقلاع: يخرج كل داخلٍ من جلسته وترمي الاستمارات
+// خطأ antiforgery — عطبٌ لا يظهر إلا بعد إعادة تشغيل، فيُبحث عن سببه بعيداً.
+// يُضبط المسار في Keys:Path، وإن غاب فمجلدٌ جنب المحتوى.
+var keyRing = builder.Configuration["Keys:Path"];
+if (string.IsNullOrWhiteSpace(keyRing))
+    keyRing = Path.Combine(builder.Environment.ContentRootPath, "keys");
+Directory.CreateDirectory(keyRing);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyRing))
+    .SetApplicationName("YelgLens.Intake");
 
 // ---------- الهوية والصلاحيات ----------
 builder.Services.AddAntiforgery(o => o.HeaderName = "XSRF-TOKEN");

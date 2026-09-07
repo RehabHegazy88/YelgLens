@@ -45,3 +45,7 @@ setup-local-db.ps1
 # وصل قاعدة التطوير المحلية — فيه كلمة سر، فلا يدخل المستودع
 appsettings.Development.json
 set-local-connection.ps1
+
+# ناتج النشر — يُبنى ولا يُحفظ
+publish/
+publish-linux/
