@@ -38,3 +38,10 @@ YelgLens.Intake.PL/Storage/*
 *.db-wal
 Thumbs.db
 .DS_Store
+
+# سكربت تهيئة محلي — يُولَّد عند الحاجة ولا يُحفظ
+setup-local-db.ps1
+
+# وصل قاعدة التطوير المحلية — فيه كلمة سر، فلا يدخل المستودع
+appsettings.Development.json
+set-local-connection.ps1
