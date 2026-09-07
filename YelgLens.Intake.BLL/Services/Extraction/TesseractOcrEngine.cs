@@ -76,20 +76,67 @@ public sealed class TesseractOcrEngine : IOcrEngine
     }
 
     /// <summary>
-    /// المحرك متاح فقط إذا وُجدت ملفات كل لغة مطلوبة. الادعاء بالتوفر ثم
-    /// الفشل عند القراءة يحوّل عطباً ظاهراً إلى عطب صامت.
+    /// المحرك متاح فقط إذا وُجدت ملفات كل لغة مطلوبة **وأمكن تحميل المكتبة
+    /// الأصلية**. الادعاء بالتوفر ثم الفشل عند القراءة يحوّل عطباً ظاهراً إلى
+    /// عطب صامت.
+    ///
+    /// وفحص المكتبة أُضيف بعد أن وقع ذلك فعلاً: حزمة Tesseract تشحن مكتباتٍ
+    /// لويندوز وحدها (<c>x64/tesseract50.dll</c>)، فعلى لينكس تُوجد ملفات
+    /// اللغة ويُعلَن التوفر ثم يسقط كل نداء. وكانت النتيجة أن يُحال كل مستند
+    /// إلى البديل السحابي بلا أن يعرف أحدٌ لماذا — عطبٌ يبدو اختياراً.
     /// </summary>
-    public bool IsAvailable
+    public bool IsAvailable =>
+        string.Equals(_settings.Engine, "tesseract", StringComparison.OrdinalIgnoreCase)
+        && MissingLanguages().Count == 0
+        && NativeLoads();
+
+    /// <summary>سبب التعطّل، صريحاً — ليُقال في السجل وفي الشاشة.</summary>
+    public string? UnavailableReason
     {
         get
         {
             if (!string.Equals(_settings.Engine, "tesseract", StringComparison.OrdinalIgnoreCase))
-                return false;
+                return $"المحرك المطلوب «{_settings.Engine}» لا «tesseract».";
 
-            if (!Directory.Exists(_tessData)) return false;
+            if (!Directory.Exists(_tessData))
+                return $"مجلد ملفات اللغة غير موجود: {_tessData}";
 
-            return Languages().All(lang =>
-                File.Exists(Path.Combine(_tessData, $"{lang}.traineddata")));
+            if (MissingLanguages() is { Count: > 0 } missing)
+                return $"ملفات اللغة ناقصة ({string.Join("، ", missing)}) في {_tessData}";
+
+            return NativeLoads() ? null : _nativeError;
+        }
+    }
+
+    private bool? _native;
+    private string? _nativeError;
+
+    /// <summary>
+    /// يجرّب تحميل المكتبة الأصلية مرةً واحدة.
+    ///
+    /// المحاولة نفسها هي الفحص: لا سبيل إلى معرفة أن
+    /// <c>libtesseract</c> موجودةٌ وصالحة إلا بفتح محرك عليها.
+    /// </summary>
+    private bool NativeLoads()
+    {
+        if (_native is { } known) return known;
+
+        try
+        {
+            using var engine = new TesseractEngine(_tessData, Languages()[0], EngineMode.Default);
+            _nativeError = null;
+            return (_native = true).Value;
+        }
+        catch (Exception ex)
+        {
+            _nativeError =
+                "تعذّر تحميل مكتبة Tesseract الأصلية. حزمة NuGet تشحن مكتبات ويندوز وحدها، "
+                + "فعلى لينكس تُثبَّت من النظام: "
+                + "apt-get install -y tesseract-ocr libtesseract5 libleptonica-dev — "
+                + $"({ex.GetType().Name}: {ex.Message})";
+
+            _log.LogError(ex, "المحرك المحلي معطّل: المكتبة الأصلية لا تُحمَّل من {Path}.", _tessData);
+            return (_native = false).Value;
         }
     }
 
