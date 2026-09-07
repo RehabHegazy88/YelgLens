@@ -1,0 +1,119 @@
+@page "/Users"
+@model YelgLens.Intake.PL.Pages.Users.IndexModel
+@{
+    ViewData["Title"] = "المستخدمون";
+    Layout = "Shared/_Layout";
+}
+
+<div class="page-head">
+    <div>
+        <h1>المستخدمون</h1>
+        <p class="t-body-sm muted">
+            المندوب يرفع ولا يعتمد، والمراجع يعتمد ما رفعه غيره. الفصل بينهما ليس تنظيمياً
+            فحسب: قيم التعرّف الضوئي احتمالية، ولا يصح أن يقرّها من التقطها.
+        </p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")" role="status"
+         style="margin-bottom:var(--space-5);">
+        @Model.Feedback
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.IssuedPassword))
+{
+    <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-5);flex-direction:column;">
+        <span>
+            كلمة المرور لحساب <strong>@Model.IssuedFor</strong> — تُعرض مرة واحدة فقط،
+            انسخها الآن وسلّمها لصاحبها ليغيّرها.
+        </span>
+        <code class="mono" style="background:var(--color-surface);border:var(--border-hairline) solid var(--color-warning-border);
+                                  border-radius:var(--radius-sm);padding:var(--space-2) var(--space-4);
+                                  font-size:var(--text-body);">@Model.IssuedPassword</code>
+    </div>
+}
+
+<div class="card" style="margin-bottom:var(--space-5);">
+    <h2 class="t-h5" style="margin:0 0 var(--space-4);">حساب جديد</h2>
+
+    <form method="post" asp-page-handler="Create">
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+            <div class="field">
+                <label class="t-label" asp-for="Input.Email">البريد الإلكتروني</label>
+                <input class="input" type="email" asp-for="Input.Email" dir="ltr" />
+                <span class="field-error" asp-validation-for="Input.Email"></span>
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.FirstName">الاسم الأول</label>
+                <input class="input" type="text" asp-for="Input.FirstName" />
+                <span class="field-error" asp-validation-for="Input.FirstName"></span>
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.LastName">الاسم الأخير</label>
+                <input class="input" type="text" asp-for="Input.LastName" />
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.RoleName">الدور</label>
+                <select class="select" asp-for="Input.RoleName">
+                    @foreach (var role in Model.Roles)
+                    {
+                        <option value="@role">@YelgLens.Intake.PL.Pages.Users.IndexModel.RoleLabel(role)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.BranchCode">الفرع أو المنطقة (اختياري)</label>
+                <input class="input" type="text" asp-for="Input.BranchCode" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-top:var(--space-4);">
+            <button type="submit" class="btn">أنشئ الحساب</button>
+        </div>
+    </form>
+</div>
+
+<div class="table-wrap">
+    <table class="data">
+        <thead>
+            <tr>
+                <th>الاسم</th>
+                <th>البريد</th>
+                <th>الدور</th>
+                <th>آخر دخول</th>
+                <th><span class="sr-only">إجراء</span></th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var row in Model.Items)
+        {
+            <tr style="@(row.User.IsActive ? "" : "opacity:.5;")">
+                <td>@row.User.FullName</td>
+                <td class="mono">@row.User.Email</td>
+                <td>
+                    <span class="badge badge-info">
+                        @YelgLens.Intake.PL.Pages.Users.IndexModel.RoleLabel(row.RoleName)
+                    </span>
+                </td>
+                <td class="mono">@(row.User.LastLoginDate?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                <td>
+                    <div class="row" style="gap:var(--space-2);flex-wrap:nowrap;">
+                        <form method="post" asp-page-handler="Toggle" asp-route-id="@row.User.Id" style="margin:0;">
+                            <button type="submit" class="btn btn-tertiary btn-sm">
+                                @(row.User.IsActive ? "إيقاف" : "تفعيل")
+                            </button>
+                        </form>
+                        <form method="post" asp-page-handler="Reset" asp-route-id="@row.User.Id" style="margin:0;"
+                              onsubmit="return confirm('إعادة ضبط كلمة المرور لهذا الحساب؟');">
+                            <button type="submit" class="btn btn-tertiary btn-sm">كلمة مرور جديدة</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

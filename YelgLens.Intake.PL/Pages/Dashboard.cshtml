@@ -1,0 +1,307 @@
+@page "/Dashboard"
+@using YelgLens.Intake.BLL.Services.Review
+@model YelgLens.Intake.PL.Pages.DashboardModel
+@{
+    ViewData["Title"] = "لوحة المتابعة";
+    Layout = "Shared/_Layout";
+
+    var v = Model.View;
+    var peak = DashboardModel.Stages.Max(s => v.Funnel.GetValueOrDefault(s.Status));
+    var reasonPeak = v.Reasons.Count == 0 ? 1 : v.Reasons.Max(r => r.Documents);
+}
+
+<style>
+    /* التدرّج الأزرق وحده للمقادير — ألوان الحالة محجوزة للشارات التي
+       يصحبها نصّ دائماً، وقد قِيس أن البُنّي والأحمر منها يتطابقان تحت عمى
+       الألوان الأخضر-الأحمر (ΔE 0.6). */
+    :root {
+        --seq-1:#93B2F7; --seq-2:#5C87ED; --seq-3:#3364E0; --seq-4:#1F4FD6; --seq-5:#16307C;
+        --chart-ink:var(--color-text-secondary);
+        --chart-grid:var(--color-divider);
+    }
+    @@media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+            --seq-1:#C3D5FC; --seq-2:#93B2F7; --seq-3:#5C87ED; --seq-4:#3364E0; --seq-5:#1F4FD6;
+        }
+    }
+    :root[data-theme="dark"] {
+        --seq-1:#C3D5FC; --seq-2:#93B2F7; --seq-3:#5C87ED; --seq-4:#3364E0; --seq-5:#1F4FD6;
+    }
+
+    .hero {
+        display:flex; align-items:baseline; gap:var(--space-4); flex-wrap:wrap;
+        padding:var(--space-5) var(--space-6); border-radius:var(--radius-lg);
+        border:var(--border-hairline) solid var(--color-border); background:var(--color-surface);
+        margin-bottom:var(--space-5);
+    }
+    .hero .n {
+        font-size:clamp(2.2rem,1.6rem+2vw,3rem); font-weight:800; line-height:1;
+        font-variant-numeric:tabular-nums; direction:ltr;
+    }
+    .hero.calm .n { color:var(--color-success); }
+    .hero.busy .n { color:var(--color-error); }
+    .hero .what { font-size:var(--text-body); color:var(--color-text-secondary); }
+
+    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+             gap:var(--space-3); margin-bottom:var(--space-6); }
+    .tile { background:var(--color-surface); border:var(--border-hairline) solid var(--color-border);
+            border-radius:var(--radius-md); padding:var(--space-4) var(--space-5); }
+    .tile .k { font-size:var(--text-caption); color:var(--color-text-tertiary); }
+    .tile .v { font-size:1.5rem; font-weight:700; font-variant-numeric:tabular-nums;
+               direction:ltr; text-align:start; color:var(--color-brand-navy); margin-top:2px; }
+    .tile .sub { font-size:var(--text-caption); color:var(--color-text-tertiary); }
+    @@media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) .tile .v { color:var(--seq-1); }
+    }
+    :root[data-theme="dark"] .tile .v { color:var(--seq-1); }
+
+    /* الرسم بأشرطة أفقية: الأسماء عربية طويلة، وقراءتها أفقياً لا تُميل الرأس. */
+    .bars { display:flex; flex-direction:column; gap:var(--space-3); }
+    .bar-row { display:grid; grid-template-columns:minmax(120px,150px) 1fr auto; gap:var(--space-3);
+               align-items:center; }
+    .bar-row .label { font-size:var(--text-body-sm); color:var(--chart-ink); }
+    /* الشريطان كتلتان صراحةً: العنصر السطري لا يقبل عرضاً ولا ارتفاعاً،
+       وspan داخل span كان يُلغي العرض فتظهر الأشرطة كلها بطول واحد. */
+    .bar-track { display:block; height:14px; background:var(--chart-grid);
+                 border-radius:4px; overflow:hidden; }
+    .bar-fill  { display:block; height:100%; border-radius:4px; min-width:3px;
+                 transition:width var(--duration-normal, .24s) var(--ease-out, ease); }
+    .bar-row .value { font-size:var(--text-body-sm); font-weight:700; font-variant-numeric:tabular-nums;
+                      direction:ltr; color:var(--chart-ink); min-width:7ch; text-align:end;
+                      white-space:nowrap; }
+    .bar-row .share { font-weight:400; color:var(--color-text-tertiary); font-size:var(--text-caption); }
+
+    .panel { background:var(--color-surface); border:var(--border-hairline) solid var(--color-border);
+             border-radius:var(--radius-lg); padding:var(--space-5) var(--space-6); }
+    .panel > h2 { font-size:var(--text-h5); margin:0 0 var(--space-4); }
+    .two { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+           gap:var(--space-4); margin-bottom:var(--space-6); }
+
+    .stalled { border:var(--border-hairline) solid var(--color-border); border-radius:var(--radius-lg);
+               background:var(--color-surface); margin-bottom:var(--space-4); overflow:hidden; }
+    .stalled > header { display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;
+                        padding:var(--space-4) var(--space-5);
+                        border-block-end:var(--border-hairline) solid var(--color-border); }
+    .stalled > header h2 { font-size:var(--text-body); font-weight:700; margin:0; }
+    .stalled > header .why { font-size:var(--text-caption); color:var(--color-text-tertiary);
+                             flex:1 1 100%; margin:0; }
+    .stalled.urgent { border-inline-start:3px solid var(--color-error); }
+    .stalled.warn   { border-inline-start:3px solid var(--color-warning); }
+
+    .row-item { display:grid; grid-template-columns:auto 1fr auto auto; gap:var(--space-3);
+                align-items:center; padding:var(--space-3) var(--space-5);
+                border-block-end:var(--border-hairline) solid var(--color-divider); }
+    .row-item:last-child { border-block-end:0; }
+    .row-item:hover { background:var(--blue-50); }
+    @@media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) .row-item:hover { background:var(--sunken, #0E1830); }
+    }
+    .row-item .who { min-width:0; }
+    .row-item .name { font-size:var(--text-body-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .row-item .reason { font-size:var(--text-caption); color:var(--color-text-tertiary);
+                        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .row-item .age { font-size:var(--text-caption); color:var(--color-text-tertiary); white-space:nowrap; }
+    .row-item .age.old { color:var(--color-error); font-weight:700; }
+
+    .all-clear { padding:var(--space-6); text-align:center; color:var(--color-success);
+                 font-size:var(--text-body-sm); }
+</style>
+
+<div class="page-head">
+    <div>
+        <h1>لوحة المتابعة</h1>
+        <p class="t-body-sm muted">
+            ما يحتاج نظراً الآن — لا عدّادات فحسب: كل بندٍ هنا مستندٌ يُفتح ويُعالج.
+        </p>
+    </div>
+    <a class="btn btn-secondary" href="/Documents">قائمة المراجعة</a>
+</div>
+
+@* الرقم الأول هو السؤال الأول: هل فيه شغل واقف؟ *@
+<div class="hero @(v.NeedsAttention == 0 ? "calm" : "busy")">
+    <span class="n">@v.NeedsAttention</span>
+    <span class="what">
+        @if (v.NeedsAttention == 0)
+        {
+            <text>لا شيء متعطّل — كل ما وصل إمّا يُراجَع أو رُحِّل.</text>
+        }
+        else
+        {
+            <text>مستنداً متعطّلاً يحتاج تدخّلاً. تفصيلها أسفل.</text>
+        }
+    </span>
+</div>
+
+<div class="tiles">
+    <div class="tile">
+        <div class="k">إجمالي المستندات</div>
+        <div class="v">@v.Total</div>
+    </div>
+    <div class="tile">
+        <div class="k">رُحِّل هذا الأسبوع</div>
+        <div class="v">@v.PublishedThisWeek</div>
+    </div>
+    <div class="tile">
+        <div class="k">فروع بلا ربط</div>
+        <div class="v">@v.UnmappedBranches</div>
+        @if (v.UnmappedBranches > 0)
+        {
+            <div class="sub"><a class="link-btn" href="/Mappings">أكملها</a></div>
+        }
+    </div>
+    <div class="tile">
+        <div class="k">كشف عملاء أودو</div>
+        <div class="v">@v.CustomerCount</div>
+        <div class="sub">
+            من <span class="mono">@(v.CustomerSource == "sheet" ? "كشف مرفوع" : v.CustomerSource)</span>
+            @if (v.CustomerSyncedOn is { } synced)
+            {
+                <text> · @synced.ToString("MM-dd HH:mm")</text>
+            }
+        </div>
+    </div>
+    <div class="tile">
+        <div class="k">الاتصال بأودو</div>
+        <div class="v" style="font-size:1rem;">
+            @if (v.OdooConfigured)
+            {
+                <span class="badge badge-success">مضبوط</span>
+            }
+            else
+            {
+                <span class="badge badge-warning">غير مضبوط</span>
+            }
+        </div>
+        @if (v.OdooConfigured)
+        {
+            <div class="sub mono">@v.OdooDatabase</div>
+        }
+    </div>
+</div>
+
+<div class="two">
+    <div class="panel">
+        <h2>المسار</h2>
+        @* تدرّجٌ واحد لأن هذه مراحل عمليةٍ واحدة لا فئاتٍ مستقلة، وكل شريط
+           موسومٌ باسمه وعدده فلا تُحمل الهوية على اللون وحده. *@
+        <div class="bars">
+            @for (var i = 0; i < DashboardModel.Stages.Length; i++)
+            {
+                var stage = DashboardModel.Stages[i];
+                var count = v.Funnel.GetValueOrDefault(stage.Status);
+                var width = peak == 0 ? 0 : (int)Math.Round(100.0 * count / peak);
+
+                var share = v.Total == 0 ? 0 : (int)Math.Round(100.0 * count / v.Total);
+
+                <div class="bar-row" title="@stage.Label: @count من @v.Total (@share%)">
+                    <span class="label">@stage.Label</span>
+                    <span class="bar-track">
+                        <span class="bar-fill" style="width:@(width)%;background:var(--seq-@(i + 1));"></span>
+                    </span>
+                    <span class="value">@count <span class="share">@share%</span></span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>ما يمنع الاعتماد</h2>
+        @if (v.Reasons.Count == 0)
+        {
+            <p class="t-body-sm" style="color:var(--color-success);margin:0;">
+                لا ملاحظة مانعة قائمة على أي مستند.
+            </p>
+        }
+        else
+        {
+            <div class="bars">
+                @foreach (var reason in v.Reasons)
+                {
+                    var width = (int)Math.Round(100.0 * reason.Documents / reasonPeak);
+
+                    var share = v.Total == 0 ? 0 : (int)Math.Round(100.0 * reason.Documents / v.Total);
+
+                    <div class="bar-row" title="@reason.Label (@reason.Code): @reason.Documents مستنداً من @v.Total">
+                        <span class="label" title="@reason.Code">@reason.Label</span>
+                        <span class="bar-track">
+                            <span class="bar-fill" style="width:@(width)%;background:var(--seq-3);"></span>
+                        </span>
+                        <span class="value">@reason.Documents <span class="share">@share%</span></span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@{
+    var groups = new (string Title, string Why, string Tone, List<StalledDocument> Items)[]
+    {
+        ("فشل ترحيله إلى أودو",
+         "أُنشئ أمر البيع فرفضه أودو. السبب مكتوب بجانب كل مستند.",
+         "urgent", v.PublishFailed),
+
+        ("معتمد ولم يُرحَّل",
+         "عمل المراجع تمّ والطلبية لم تصل أودو. لا خطأ ولا رسالة — هذا أخطر ما في اللوحة لأنه صامت.",
+         "urgent", v.AwaitingPublish),
+
+        ("أوردره في أودو وأصله لم يُرسَل",
+         "الطلبية وصلت والدليل لم يصل. افتح المستند واضغط «أعد إرسال الأصل» — الملف باقٍ عندنا.",
+         "warn", v.SourceNotSent),
+
+        ("موقوف بملاحظة مانعة",
+         "لا يُعتمد حتى يزول سببها.",
+         "warn", v.Blocked),
+
+        ("مرفوض ولم يُعَد رفعه",
+         "عاد إلى المندوب ولم يعد. راجع سبب الرفض معه.",
+         "warn", v.RejectedNotReplaced),
+
+        ("أقدم ما ينتظر مراجعاً",
+         "الأقدم أولاً — ما طال انتظاره أحقّ بالنظر.",
+         "", v.OldestWaiting)
+    };
+}
+
+@foreach (var group in groups)
+{
+    @if (group.Items.Count == 0) { continue; }
+
+    <section class="stalled @group.Tone">
+        <header>
+            <h2>@group.Title</h2>
+            <span class="badge @(group.Tone == "urgent" ? "badge-error" : group.Tone == "warn" ? "badge-warning" : "badge-neutral")">
+                @group.Items.Count
+            </span>
+            <p class="why">@group.Why</p>
+        </header>
+
+        @foreach (var item in group.Items)
+        {
+            <a class="row-item" href="/Documents/Review/@item.Id" style="text-decoration:none;color:inherit;">
+                <span class="mono t-caption muted">#@item.Id</span>
+
+                <span class="who">
+                    <span class="name">
+                        @(item.PoNumber ?? item.File)
+                        @if (item.PoNumber is not null && !string.IsNullOrWhiteSpace(item.Branch))
+                        {
+                            <span class="muted"> — @item.Branch</span>
+                        }
+                    </span>
+                    <span class="reason">@item.Reason</span>
+                </span>
+
+                <span class="age @(item.Days >= 3 ? "old" : "")">@item.Age</span>
+                <span class="badge @DashboardModel.StatusBadge(item.Status)">@DashboardModel.StatusLabel(item.Status)</span>
+            </a>
+        }
+    </section>
+}
+
+@if (v.NeedsAttention == 0 && v.OldestWaiting.Count == 0)
+{
+    <div class="stalled">
+        <p class="all-clear">لا مستند متعطّل ولا مستند ينتظر. الطابور فارغ.</p>
+    </div>
+}

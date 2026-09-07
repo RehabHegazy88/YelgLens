@@ -1,0 +1,40 @@
+# ---------- مخرجات البناء ----------
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# ---------- ملفات المحرِّر ----------
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.swp
+
+# ---------- الأسرار ----------
+# القاعدة: لا مفتاح ولا كلمة سر في ملفٍ يُنسخ ويُرفع. مكانها user-secrets
+# محلياً ومتغيّرات البيئة على الخادم.
+appsettings.*.local.json
+appsettings.Production.json
+secrets.json
+*.pfx
+*.key
+
+# ---------- مستندات العملاء ----------
+# مستنداتٌ حقيقية فيها أسماءٌ وأسعارٌ وأرقام. مكانها القرص لا المستودع،
+# والمجلد نفسه يبقى ليجده التطبيق عند أول تشغيل.
+YelgLens.Intake.PL/Storage/*
+!YelgLens.Intake.PL/Storage/.gitkeep
+
+# ---------- بيانات Tesseract ----------
+*.traineddata
+
+# ---------- متفرقات ----------
+*.db
+*.db-shm
+*.db-wal
+Thumbs.db
+.DS_Store

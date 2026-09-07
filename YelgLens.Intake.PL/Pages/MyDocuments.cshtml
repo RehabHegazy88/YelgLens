@@ -1,0 +1,81 @@
+@page "/MyDocuments"
+@model YelgLens.Intake.PL.Pages.MyDocumentsModel
+@{
+    ViewData["Title"] = "مستنداتي";
+    Layout = "Shared/_Layout";
+}
+
+<div class="page-head">
+    <div>
+        <h1>مستنداتي</h1>
+        <p class="t-body-sm muted">ما رفعته أنت وحالة كل مستند. المرفوض يُعاد تصويره من هنا.</p>
+    </div>
+    <a class="btn btn-secondary" href="/">رفع مستند</a>
+</div>
+
+@if (Model.RejectedCount > 0)
+{
+    <div class="alert alert-error" role="status" style="margin-bottom:var(--space-5);">
+        عندك <strong>&nbsp;@Model.RejectedCount&nbsp;</strong> مستند مرفوض يحتاج إعادة تصوير.
+        اقرأ سبب الرفض تحت كل واحد قبل ما تعيده.
+    </div>
+}
+
+@if (Model.Items.Count == 0)
+{
+    <div class="empty">
+        <p class="t-body">لم ترفع مستندات بعد.</p>
+        <a class="btn btn-secondary" href="/" style="margin-top:var(--space-4);">ابدأ برفع مستند</a>
+    </div>
+}
+else
+{
+    <div class="stack">
+        @foreach (var doc in Model.Items)
+        {
+            var rejected = doc.Status == IntakeStatus.Rejected;
+
+            <div class="card" style="@(rejected ? "border-color:var(--color-error-border);" : "")">
+                <div class="row" style="justify-content:space-between;align-items:flex-start;">
+                    <span class="mono t-body-sm muted">#@doc.Id</span>
+                    <span class="badge @MyDocumentsModel.StatusBadge(doc.Status)">
+                        @MyDocumentsModel.StatusLabel(doc.Status)
+                    </span>
+                </div>
+
+                <p class="t-body-sm" style="margin:var(--space-2) 0 var(--space-1);word-break:break-word;">
+                    @doc.SourceFileName
+                </p>
+
+                <p class="t-caption muted" style="margin:0;">
+                    رُفع @doc.UploadedDate.ToString("yyyy-MM-dd HH:mm")
+                    @if (doc.CustomerPoNumber.HasValue)
+                    {
+                        <text> · أمر شراء @doc.CustomerPoNumber.Value</text>
+                    }
+                    · @doc.Lines.Count بند
+                </p>
+
+                @if (rejected)
+                {
+                    @if (!string.IsNullOrWhiteSpace(doc.ReviewNote))
+                    {
+                        <div class="alert alert-error" style="margin-top:var(--space-3);flex-direction:column;gap:var(--space-1);">
+                            <strong class="t-caption">سبب الرفض — من @(doc.ReviewedBy?.FullName ?? "المراجع"):</strong>
+                            <span>@doc.ReviewNote</span>
+                        </div>
+                    }
+
+                    <a class="btn btn-block" href="/?replaces=@doc.Id" style="margin-top:var(--space-3);">
+                        أعد التصوير والرفع
+                    </a>
+                }
+
+                @if (doc.ReplacesDocumentId is { } previous)
+                {
+                    <p class="t-caption muted" style="margin:var(--space-2) 0 0;">بديل عن المستند #@previous</p>
+                }
+            </div>
+        }
+    </div>
+}

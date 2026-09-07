@@ -1,0 +1,221 @@
+@page "/Products"
+@model YelgLens.Intake.PL.Pages.Products.IndexModel
+@{
+    ViewData["Title"] = "المنتجات والأسعار";
+    Layout = "Shared/_Layout";
+
+    var result = Model.Result;
+}
+
+<style>
+    .pl-chips { display:flex; flex-wrap:wrap; gap:var(--space-2); margin-bottom:var(--space-5); }
+    .pl-chip b { font-weight:700; opacity:.7; margin-inline-start:4px; }
+    .price { font-variant-numeric:tabular-nums; direction:ltr; text-align:end; }
+    .price.special { color:var(--color-success); font-weight:700; }
+    .price.none { color:var(--color-text-tertiary); }
+    .off td { opacity:.5; }
+</style>
+
+<div class="page-head">
+    <div>
+        <h1>المنتجات والأسعار</h1>
+        <p class="t-body-sm muted">
+            استعلام مباشر عن منتجات <span class="mono">@Model.Database</span> وأسعارها.
+            اختر قائمة أسعار لترى سعر كل صنف فيها بجانب سعره العام. قراءة فقط.
+        </p>
+    </div>
+    <a class="btn btn-secondary" href="/Quotations">أوردرات أودو</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-error" role="status" style="margin-bottom:var(--space-5);">@Model.Error</div>
+}
+
+@if (Model.IsAvailable)
+{
+    @* قوائم الأسعار تُعرض كاملةً لا في قائمة منسدلة: عددها يُقرأ في سطر،
+       وعدد بنودها يقول أيّها مضبوط وأيّها فارغ قبل أن يُبحث فيه. *@
+    @if (Model.Pricelists.Count > 0)
+    {
+        <div class="pl-chips">
+            <a class="chip @(Model.PricelistId is null ? "is-selected" : "")"
+               asp-page="/Products/Index"
+               asp-all-route-data="@(new Dictionary<string, string?> { ["q"] = Model.Q })">
+                بلا قائمة أسعار
+            </a>
+
+            @foreach (var pricelist in Model.Pricelists)
+            {
+                <a class="chip pl-chip @(Model.PricelistId == pricelist.Id ? "is-selected" : "")"
+                   asp-page="/Products/Index"
+                   asp-all-route-data="@(new Dictionary<string, string?> { ["pl"] = pricelist.Id.ToString(), ["q"] = Model.Q })"
+                   title="@pricelist.Currency">
+                    @pricelist.Name <b class="mono">@pricelist.Items</b>
+                </a>
+            }
+        </div>
+    }
+
+    <form method="get" class="filter-bar" style="margin-bottom:var(--space-5);">
+        <div class="field" style="flex:1 1 260px;">
+            <label class="t-label" for="q">بحث</label>
+            <input class="input" type="search" id="q" name="q" value="@Model.Q"
+                   placeholder="اسم المنتج أو المرجع الداخلي أو الباركود" />
+        </div>
+
+        <div class="field">
+            <label class="t-label" for="pl">قائمة الأسعار</label>
+            <select class="select" id="pl" name="pl">
+                <option value="">بلا قائمة</option>
+                @foreach (var pricelist in Model.Pricelists)
+                {
+                    <option value="@pricelist.Id" selected="@(Model.PricelistId == pricelist.Id)">
+                        @pricelist.Name
+                    </option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label class="t-label" for="size">لكل صفحة</label>
+            <select class="select" id="size" name="size">
+                @foreach (var size in YelgLens.Intake.PL.Pages.Products.IndexModel.PageSizes)
+                {
+                    <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="align-self:flex-end;">
+            <label class="check" style="min-height:auto;">
+                <input type="checkbox" name="priced" value="true" checked="@Model.PricedOnly" />
+                <span class="t-body-sm">المسعَّر في القائمة فقط</span>
+            </label>
+        </div>
+
+        <div class="field" style="align-self:flex-end;">
+            <label class="check" style="min-height:auto;">
+                <input type="checkbox" name="all" value="true" checked="@Model.IncludeNotSaleable" />
+                <span class="t-body-sm">أظهر غير القابل للبيع</span>
+            </label>
+        </div>
+
+        <div class="field" style="align-self:flex-end;flex-direction:row;gap:var(--space-2);">
+            <button type="submit" class="btn">بحث</button>
+            @if (Model.HasFilter)
+            {
+                <a class="btn btn-tertiary" href="/Products">مسح</a>
+            }
+        </div>
+    </form>
+
+    @if (Model.PricedOnly && Model.PricelistId is null)
+    {
+        <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-4);">
+            «المسعَّر في القائمة فقط» يحتاج قائمة أسعارٍ مختارة — أُهمِل هذه المرة.
+        </div>
+    }
+
+    @if (result.Total == 0)
+    {
+        <div class="empty">
+            <p class="t-body">
+                @(Model.HasFilter ? "لا منتج يطابق هذا البحث." : "لا منتجات في هذه القاعدة.")
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                    <tr>
+                        <th>المرجع الداخلي</th>
+                        <th>الباركود</th>
+                        <th>المنتج</th>
+                        <th>الوحدة</th>
+                        <th class="num">السعر العام</th>
+                        @if (Model.SelectedPricelist is { } header)
+                        {
+                            <th class="num">@header.Name</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var product in result.Items)
+                {
+                    <tr class="@(product.Active && product.SaleOk ? "" : "off")">
+                        <td class="mono">@(product.Code ?? "—")</td>
+                        <td class="mono">@(product.Barcode ?? "—")</td>
+                        <td style="white-space:normal;max-width:44ch;">
+                            @product.Name
+                            @if (!product.SaleOk)
+                            {
+                                <span class="raw">غير قابل للبيع</span>
+                            }
+                            @if (!product.Active)
+                            {
+                                <span class="raw">مؤرشف</span>
+                            }
+                        </td>
+                        <td>@product.Uom</td>
+                        <td class="num price">@product.ListPrice.ToString("N2")</td>
+
+                        @if (Model.SelectedPricelist is not null)
+                        {
+                            <td class="num">
+                                @if (product.PricelistPrice is { } special)
+                                {
+                                    <span class="price special">@special.ToString("N2")</span>
+                                }
+                                else
+                                {
+                                    @* لا سعر خاصاً يعني أن أودو يبيعه بالسعر العام،
+                                       لا أنه ممنوع على هذا العميل. *@
+                                    <span class="price none" title="لا سعر خاص — يُباع بالسعر العام">—</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
+                    flex-wrap:wrap;margin-top:var(--space-4);">
+            <p class="t-body-sm muted" style="margin:0;">
+                <span class="mono">@result.FirstIndex</span>–<span class="mono">@result.LastIndex</span>
+                من <span class="mono">@result.Total</span>
+                @if (Model.SelectedPricelist is { } note)
+                {
+                    <text> · السعر الأيسر من قائمة <strong>@note.Name</strong>، والفارغ يعني السعر العام</text>
+                }
+            </p>
+
+            @if (result.PageCount > 1)
+            {
+                <nav class="pagination" aria-label="صفحات النتائج">
+                    <a class="btn btn-tertiary btn-sm @(result.HasPrevious ? "" : "is-disabled")"
+                       asp-page="/Products/Index" asp-all-route-data="@Model.Link(page: result.Page - 1)">السابق</a>
+
+                    @{
+                        var first = Math.Max(1, result.Page - 2);
+                        var last = Math.Min(result.PageCount, first + 4);
+                        first = Math.Max(1, last - 4);
+                    }
+
+                    @for (var n = first; n <= last; n++)
+                    {
+                        <a asp-page="/Products/Index" asp-all-route-data="@Model.Link(page: n)"
+                           aria-current="@(n == result.Page ? "page" : null)">@n</a>
+                    }
+
+                    <a class="btn btn-tertiary btn-sm @(result.HasNext ? "" : "is-disabled")"
+                       asp-page="/Products/Index" asp-all-route-data="@Model.Link(page: result.Page + 1)">التالي</a>
+                </nav>
+            }
+        </div>
+    }
+}

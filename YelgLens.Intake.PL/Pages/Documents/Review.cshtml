@@ -1,0 +1,1164 @@
+﻿@page "/Documents/Review/{id:long}"
+@model YelgLens.Intake.PL.Pages.Documents.ReviewModel
+@using YelgLens.Intake.PL.Pages.Documents
+@{
+    ViewData["Title"] = $"مراجعة المستند {Model.Document.Id}";
+    Layout = "Shared/_Layout";
+    var doc = Model.Document;
+    var isDelivery = doc.Kind == DocumentKind.DeliverySlip;
+    var editable = !Model.ReadOnly;
+}
+
+<style>
+    /* أنماط هذه الشاشة وحدها. كل قيمة متغيّرٌ من نظام التصميم — الشاشة
+       تتبع العلامة، ولا تُعرَّف فيها ألوانٌ خاصة بها. */
+
+    .bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--space-4); flex-wrap:wrap; gap:var(--space-3); }
+    .bar h2 { margin:0; font-size:var(--text-h4); font-weight:700; }
+    .bar .links a { font-size:var(--text-body-sm); color:var(--color-text-link); text-decoration:none; margin-inline-start:var(--space-4); font-weight:600; }
+
+    .card { margin-bottom:var(--space-5); }
+
+    .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:var(--space-4); }
+    .meta .k { font-size:var(--text-caption); color:var(--color-text-tertiary); margin-bottom:var(--space-1); }
+    .meta .v { font-size:var(--text-body-sm); color:var(--color-text-primary); }
+
+    input.cell, input.po, textarea.reason {
+        border:var(--border-hairline) solid var(--color-border-strong); border-radius:var(--radius-sm);
+        padding:8px 10px; font:inherit; font-size:var(--text-body-sm);
+        background:var(--color-surface); color:var(--color-text-primary); width:100%;
+    }
+    input.cell:focus, input.po:focus, textarea.reason:focus {
+        outline:none; border-color:var(--blue-600); box-shadow:0 0 0 3px var(--blue-100);
+    }
+    input.po { max-width:220px; font-family:'IBM Plex Mono', ui-monospace, monospace; }
+    input.po.wide { max-width:100%; font-family:inherit; }
+
+    table.lines { width:100%; border-collapse:collapse; }
+    table.lines th, table.lines td {
+        padding:var(--space-2) var(--space-3); text-align:start; font-size:var(--text-body-sm);
+        border-block-end:var(--border-hairline) solid var(--color-divider); vertical-align:middle;
+    }
+    table.lines th { background:var(--neutral-50); color:var(--neutral-600); font-weight:700; font-size:var(--text-caption); }
+    table.lines td.num { text-align:center; width:78px; }
+    table.lines td.qty { width:108px; }
+    table.lines td.qty input.cell { text-align:center; direction:ltr; }
+
+    /* حقل الرقم في المتصفحات يخفي السهمين عند التمرير، فتُثبَّت مساحته */
+    input.cell[type=number] { -moz-appearance:textfield; }
+    input.cell[type=number]::-webkit-outer-spin-button,
+    input.cell[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+
+    table.lines tr.low td { background:var(--color-warning-surface); }
+    table.lines tr.added td { background:var(--color-success-surface); }
+
+    /* أصل القيمة يُكتب تحتها لا يُلوَّن وحده: اللون يُميّز، والنص يُخبر. */
+    .origin { font-size:var(--text-caption); color:var(--color-text-tertiary); margin-top:2px; display:block; }
+
+    .match { font-size:var(--text-caption); display:block; margin-top:3px; line-height:1.6; }
+    .match.ok  { color:var(--color-success); }
+    .match.bad { color:var(--color-error); font-weight:600; }
+    .match.near { color:var(--color-text-tertiary); margin-top:5px; }
+
+    .near-list { display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }
+    .near-pick {
+        font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--text-caption);
+        padding:2px 8px; border-radius:var(--radius-sm); cursor:pointer;
+        border:var(--border-hairline) solid var(--color-info-border);
+        background:var(--color-info-surface); color:var(--color-info);
+    }
+    .near-pick:hover { background:var(--blue-100); }
+
+    .from-odoo { display:block; margin-top:4px; font-size:var(--text-caption); color:var(--color-text-tertiary); }
+    .adopt {
+        font:inherit; font-size:var(--text-caption); cursor:pointer;
+        padding:2px 8px; border-radius:var(--radius-sm); margin-inline-start:4px;
+        border:var(--border-hairline) solid var(--ok-line, var(--color-success-border));
+        background:var(--color-success-surface); color:var(--color-success);
+    }
+    .adopt:hover { background:#D6EFE3; }
+    .match.pending { color:var(--color-text-tertiary); }
+    .origin.human { color:var(--color-success); font-weight:600; }
+
+    .issue {
+        padding:var(--space-3) var(--space-4); border-radius:var(--radius-md);
+        margin-bottom:var(--space-2); font-size:var(--text-body-sm);
+        display:flex; gap:var(--space-3); align-items:flex-start;
+        border:var(--border-hairline) solid;
+    }
+    .issue-Blocking { background:var(--color-error-surface); border-color:var(--color-error-border); color:#8E1D17; }
+    .issue-Review   { background:var(--color-warning-surface); border-color:var(--color-warning-border); color:var(--color-warning); }
+    .issue-Info     { background:var(--neutral-100); border-color:var(--neutral-200); color:var(--neutral-700); }
+    .issue code { font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--text-caption); opacity:.8; }
+    .issue.done { opacity:.7; }
+    .issue.done code, .issue.done span { color:var(--color-text-tertiary); }
+
+    .actions { display:flex; gap:var(--space-3); align-items:flex-start; flex-wrap:wrap; }
+    .actions .grow { flex:1; min-width:240px; }
+
+    /* الاعتماد والرفض فعلان لا رجعة فيهما، فيُفرَّق بينهما باللون الدلالي
+       لا بلون العلامة: الأخضر يقرّ والأحمر يردّ. */
+    .btn.ok  { --btn-bg:var(--color-success); --btn-fg:#fff; --btn-bd:transparent; }
+    .btn.ok:hover  { --btn-bg:#0B5F3D; }
+    .btn.bad { --btn-bg:var(--color-error); --btn-fg:#fff; --btn-bd:transparent; }
+    .btn.bad:hover { --btn-bg:#8E1D17; }
+
+    /* الشاشة أعرض من بقية الصفحات: المراجعة مقارنةٌ بين ورقة وجدول،
+       وضغطهما في عمود واحد يجعل المراجع يقلّب بدل أن يقارن. */
+    .section { max-width:1560px; }
+
+    .review-split { display:grid; grid-template-columns:minmax(380px, 46%) 1fr; gap:var(--space-5); align-items:start; }
+    @@media (max-width: 1180px) { .review-split { grid-template-columns:1fr; } }
+
+    .doc-pane {
+        position:sticky; top:var(--space-4); background:var(--color-surface);
+        border:var(--border-hairline) solid var(--color-border);
+        border-radius:var(--radius-lg); overflow:hidden;
+    }
+    .doc-head {
+        display:flex; align-items:center; justify-content:space-between; gap:var(--space-3);
+        padding:var(--space-2) var(--space-3);
+        border-block-end:var(--border-hairline) solid var(--color-border); background:var(--neutral-50);
+    }
+    .doc-head .name { font-size:var(--text-caption); color:var(--color-text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .doc-tools { display:flex; gap:var(--space-1); flex-shrink:0; }
+    .doc-tools button, .doc-tools a {
+        background:var(--color-surface); border:var(--border-hairline) solid var(--color-border);
+        color:var(--color-text-primary); border-radius:var(--radius-sm);
+        padding:4px 10px; font:inherit; font-size:var(--text-caption); line-height:1.6;
+        text-decoration:none; cursor:pointer;
+    }
+    .doc-tools button:hover, .doc-tools a:hover { background:var(--blue-50); border-color:var(--blue-200); }
+
+    .page-tabs { display:flex; gap:var(--space-1); padding:var(--space-2) var(--space-3) 0; background:var(--neutral-50); flex-wrap:wrap; }
+    .page-tabs a {
+        font-size:var(--text-caption); font-weight:600; padding:6px var(--space-3);
+        border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+        border:var(--border-hairline) solid var(--color-border); border-block-end:0;
+        background:var(--color-surface); color:var(--color-text-secondary); text-decoration:none;
+    }
+    .page-tabs a.on { background:var(--color-brand-primary); color:var(--color-text-on-primary); border-color:var(--color-brand-primary); }
+
+    /* خلفية عارض المستند رمادية غامقة عمداً: الورقة بيضاء، وحدُّها لا يُرى
+       على أبيض. وهي ليست لوناً من العلامة بل سطحُ عرضٍ كخلفية قارئ PDF. */
+    .doc-frame { width:100%; height:calc(100dvh - 210px); min-height:420px; border:0; display:block; background:var(--neutral-800); }
+    .img-wrap {
+        height:calc(100dvh - 210px); min-height:420px; overflow:auto; background:var(--neutral-800);
+        display:flex; align-items:flex-start; justify-content:center;
+    }
+    .img-wrap img { transform-origin:center top; transition:transform var(--duration-fast) var(--ease-standard); max-width:100%; }
+
+    .review-split.no-doc { grid-template-columns:1fr; }
+    .review-split.no-doc .doc-pane { display:none; }
+
+    .show-doc-bar { margin-bottom:var(--space-4); }
+
+    .doc-missing { padding:var(--space-10) var(--space-5); text-align:center; color:var(--color-text-tertiary); font-size:var(--text-body-sm); line-height:1.8; }
+
+    .add-bar { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-3) var(--space-4); border-block-start:var(--border-hairline) solid var(--color-border); }
+    .add-bar .hint { font-size:var(--text-caption); color:var(--color-text-tertiary); }
+
+    .drop-row {
+        background:transparent; border:var(--border-hairline) solid var(--color-border);
+        color:var(--color-error); border-radius:var(--radius-sm);
+        padding:3px 10px; font:inherit; font-size:var(--text-body); line-height:1.2; cursor:pointer;
+    }
+    .drop-row:hover { background:var(--color-error-surface); border-color:var(--color-error-border); }
+</style>
+
+<div class="bar">
+    <h2>مستند #@doc.Id — @IndexModel.StatusLabel(doc.Status)</h2>
+    <div class="links">
+        <a href="/Documents">القائمة</a>
+        <a href="/Documents/Review/@doc.Id?handler=Original">الأصل</a>
+        <a href="/Documents/Review/@doc.Id?handler=Export">Excel</a>
+        @if (doc.Status is IntakeStatus.Approved or IntakeStatus.Published)
+        {
+            <a href="/Documents/Review/@doc.Id?handler=Odoo">ملف استيراد أودو</a>
+        }
+    </div>
+</div>
+
+@* عميل المستند يسبق كل شيء: بلا عميلٍ معروف لا يُعتمد ولا يُرحَّل، وموضع
+   هذا السؤال فوق الشاشة لا تحتها لأنه أول ما يُحسم. *@
+@if (!Model.Customer.IsKnown)
+{
+    <div class="card" style="border-color:var(--color-error-border);background:var(--color-error-surface);
+                             margin-bottom:var(--space-4);">
+        <h3 class="t-h5" style="margin:0 0 var(--space-2);color:var(--color-error);">
+            عميل هذا المستند غير معروف في أودو
+        </h3>
+        <p class="t-body-sm" style="margin:0 0 var(--space-3);color:#8E1D17;">
+            @Model.Customer.Reason
+            لا يُعتمد المستند قبل اختيار عميل قائم — النظام لا يخترع عميلاً، وأوردرٌ
+            بعميل خاطئ أسوأ من أوردر لم يُرحَّل.
+        </p>
+
+        @if (Model.CanApprove)
+        {
+            @if (!string.IsNullOrWhiteSpace(Model.Customer.BranchLabel))
+            {
+                <p class="t-caption muted" style="margin:0 0 var(--space-2);">
+                    الفرع كما ورد في المستند:
+                    <span class="mono">@Model.Customer.BranchLabel</span> —
+                    الاختيار هنا يُربط بالفرع فيُستعمل لكل ورقةٍ منه.
+                </p>
+            }
+            else
+            {
+                <p class="t-caption muted" style="margin:0 0 var(--space-2);">
+                    لا فرع في هذا المستند، فالاختيار هنا يخصّ هذه الورقة وحدها
+                    ولا يُعمَّم على غيرها.
+                </p>
+            }
+
+            <form method="post" asp-page-handler="AssignCustomer" asp-route-id="@doc.Id"
+                  class="actions" style="margin:0;">
+                <div class="grow">
+                    <input class="cell" type="text" name="odooCustomer" list="odoo-customer-choices"
+                           autocomplete="off" spellcheck="false"
+                           value="@(Model.CustomerHint?.Customer.DisplayName ?? "")"
+                           placeholder="اكتب حرفين للبحث في كشف أودو" />
+
+                    @if (Model.CustomerHint is { } hint)
+                    {
+                        <span class="origin" style="color:var(--color-info);">
+                            مقترح: @hint.Reason — راجعه قبل الحفظ.
+                        </span>
+                    }
+                    else if (Model.CustomerChoices.Count == 0)
+                    {
+                        <span class="origin">
+                            لا يوجد كشف عملاء بعد. اسحبه من أودو في شاشة «ربط الفروع».
+                        </span>
+                    }
+                </div>
+
+                <button type="submit" class="btn">اربط العميل</button>
+            </form>
+
+            <datalist id="odoo-customer-choices">
+                @foreach (var choice in Model.CustomerChoices)
+                {
+                    <option value="@choice.DisplayName"></option>
+                }
+            </datalist>
+        }
+        else
+        {
+            <p class="t-body-sm" style="margin:0;color:#8E1D17;">
+                لا تملك صلاحية الاعتماد، فلا يمكنك إسناد العميل.
+            </p>
+        }
+    </div>
+}
+
+@if (Model.Customer.StoreMismatch)
+{
+    @* الاسم موجود في أودو، فلا شيء في الشاشة يقول إن الربط خطأ. رقم المحل
+       وحده يقوله. *@
+    <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-4);flex-direction:column;gap:var(--space-1);">
+        <strong>رقم المحل في الفرع لا يطابق رقم المحل في العميل المربوط.</strong>
+        <span>
+            الفرع في المستند <span class="mono">DS @Model.Customer.BranchStore</span>،
+            والعميل «@Model.Customer.OdooCustomer» <span class="mono">DS @Model.Customer.CustomerStore</span>.
+            الأوردر سيذهب إلى الفرع الذي يخصّ اسم العميل — راجع الربط قبل الترحيل.
+        </span>
+    </div>
+}
+
+@if (Model.Customer.IsKnown && Model.CanApprove && !doc.IsPublished)
+{
+    @* الإسناد ليس فعلاً يُتاح مرةً ثم يُغلق: قد يتبيّن أن الاختيار خطأ، وقد
+       يتغيّر الفرع في أودو. فيُعرض القائم ومعه بابُ تغييره. *@
+    <details class="card" style="margin-bottom:var(--space-4);">
+        <summary style="cursor:pointer;display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;">
+            <span class="badge badge-success">عميل أودو</span>
+            <strong class="t-body-sm">@Model.Customer.OdooCustomer</strong>
+            <span class="t-caption muted">
+                @(Model.Customer.IsPerDocument ? "مُسنَد لهذا المستند وحده" : "من ربط الفرع")
+                — اضغط لتغييره
+            </span>
+        </summary>
+
+        <form method="post" asp-page-handler="AssignCustomer" asp-route-id="@doc.Id"
+              class="actions" style="margin-top:var(--space-4);">
+            <div class="grow">
+                <input class="cell" type="text" name="odooCustomer" list="odoo-customer-choices"
+                       autocomplete="off" spellcheck="false"
+                       value="@Model.Customer.OdooCustomer"
+                       placeholder="اكتب حرفين للبحث في كشف أودو" />
+                <span class="origin">
+                    @if (Model.Customer.IsPerDocument)
+                    {
+                        <text>التغيير يخصّ هذه الورقة وحدها.</text>
+                    }
+                    else
+                    {
+                        <text>التغيير يُطبَّق على الفرع، فيسري على كل ورقةٍ منه.</text>
+                    }
+                </span>
+            </div>
+            <button type="submit" class="btn btn-secondary">غيّر العميل</button>
+        </form>
+
+        <datalist id="odoo-customer-choices">
+            @foreach (var choice in Model.CustomerChoices)
+            {
+                <option value="@choice.DisplayName"></option>
+            }
+        </datalist>
+    </details>
+}
+
+@if (doc.SourceNotSent && Model.CanApprove)
+{
+    @* الأوردر وصل والأصل لم يصل. حالٌ قائمة تُعرض بصراحة ومعها ما يعالجها،
+       لا رسالةٌ تمرّ ثم تُنسى. *@
+    <div class="alert alert-warning" role="status"
+         style="margin-bottom:var(--space-4);flex-direction:column;gap:var(--space-2);">
+        <strong>لم يُرسَل الأصل إلى أودو</strong>
+        <span>
+            الأوردر <strong class="mono">&nbsp;@doc.OdooOrderName&nbsp;</strong> أُنشئ بنجاح،
+            والملف الأصلي لم يُرفع عليه بعد — وهو باقٍ عندنا ولم يُحذف.
+            @if (!string.IsNullOrWhiteSpace(doc.AttachError))
+            {
+                <text><br />السبب: @doc.AttachError</text>
+            }
+        </span>
+
+        <form method="post" asp-page-handler="Attach" asp-route-id="@doc.Id" style="margin:0;"
+              onsubmit="this.querySelector('button').disabled = true;
+                        this.querySelector('button').textContent = 'جارٍ الإرسال…';">
+            <button type="submit" class="btn btn-secondary btn-sm">أعد إرسال الأصل</button>
+        </form>
+    </div>
+}
+
+@if (doc.IsPublished)
+{
+    @* المُرحَّل يُقال عنه أين ذهب. رقم الأوردر هو ما يُبحث به في أودو عند
+       السؤال، وذكرُ القاعدة يمنع البحث عنه في غير موضعه. *@
+    <div class="alert alert-success" role="status" style="margin-bottom:var(--space-4);">
+        رُحِّل إلى أودو — الأوردر <strong class="mono">&nbsp;@doc.OdooOrderName&nbsp;</strong>
+        على قاعدة <span class="mono">@doc.OdooDatabase</span>،
+        بتاريخ <span class="mono">@doc.PublishedDate?.ToString("yyyy-MM-dd HH:mm")</span>.
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(doc.PublishError))
+{
+    <div class="alert alert-error" role="status" style="margin-bottom:var(--space-4);">
+        آخر محاولة ترحيل لم تنجح: @doc.PublishError
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")">@Model.Feedback</div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ExportWarning))
+{
+    <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-4);">
+        @Model.ExportWarning
+    </div>
+}
+
+@if (Model.FromAnotherDatabase)
+{
+    <div class="alert alert-warning" role="alert" style="margin-bottom:var(--space-4);">
+        <strong>هذا المستند مُرحَّل على قاعدةٍ أخرى.</strong>
+        رُحّل على <span class="mono">@doc.OdooDatabase</span> والنظام متصل الآن بـ
+        <span class="mono">@Model.OdooDatabase</span>.
+        <p style="margin:var(--space-2) 0 0;font-size:var(--text-sm);">
+            رقم الأوردر ورقم المرفق لا معنى لهما خارج قاعدتهما، فلن يُجلب الأصل من أودو
+            ولن يُرفع عليه شيء. للاطّلاع عليه ارجع إلى قاعدته من
+            <a href="/Settings/Odoo">إعدادات أودو</a>.
+        </p>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.PricingWarning))
+{
+    <div class="alert alert-warning" role="alert" style="margin-bottom:var(--space-4);">
+        <strong>راجع التسعير قبل الإرسال.</strong>
+        <div style="margin-top:var(--space-2);">@Model.PricingWarning</div>
+        <p style="margin:var(--space-3) 0 0;font-size:var(--text-sm);">
+            الأوردر الخاطئ سعراً يُقبل في أودو ويمضي إلى التسليم والفاتورة، فلا يُكتشف
+            إلا في الحساب. صحّح قائمة الأسعار في أودو، أو أرسل إن كانت أسعار أودو هي
+            المعتمدة.
+        </p>
+
+        @if (Model.CanPublishToOdoo)
+        {
+            <form method="post" asp-page-handler="Publish" asp-route-id="@doc.Id"
+                  style="margin:var(--space-3) 0 0;"
+                  onsubmit="this.querySelector('button').disabled = true;
+                            this.querySelector('button').textContent = 'جارٍ الترحيل…';">
+                <input type="hidden" name="PricingAcknowledged" value="true" />
+                <button type="submit" class="btn btn-secondary">أرسل رغم ذلك</button>
+            </form>
+        }
+    </div>
+}
+
+@if (doc.IsDecided)
+{
+    <div class="alert alert-success">
+        بُتَّ في هذا المستند (@IndexModel.StatusLabel(doc.Status))
+        بواسطة @(doc.ReviewedBy?.FullName ?? "—")
+        في @(doc.ReviewedDate?.ToString("yyyy-MM-dd HH:mm") ?? "—").
+        @if (!string.IsNullOrWhiteSpace(doc.ReviewNote)) { <text> الملاحظة: @doc.ReviewNote</text> }
+
+        @if (doc.ReopenCount > 0)
+        {
+            <div style="margin-top:var(--space-2);font-size:var(--text-sm);">
+                أُعيد فتحه @doc.ReopenCount مرة، آخرها بواسطة @(doc.ReopenedBy?.FullName ?? "—")
+                في @(doc.ReopenedDate?.ToString("yyyy-MM-dd HH:mm") ?? "—")
+                @if (!string.IsNullOrWhiteSpace(doc.ReopenNote)) { <text> — @doc.ReopenNote</text> }
+            </div>
+        }
+    </div>
+
+    @if (Model.CanApprove && doc.Status != IntakeStatus.Published)
+    {
+        <details class="card" style="margin-bottom:var(--space-4);">
+            <summary style="cursor:pointer;font-weight:600;padding:var(--space-3);">
+                أعِد المستند إلى المراجعة لتعديله
+            </summary>
+            <div style="padding:0 var(--space-3) var(--space-3);">
+                <p style="font-size:var(--text-sm);margin:0 0 var(--space-3);">
+                    يرجع المستند قابلاً للتعديل، ويُسجَّل من أعاده ومتى ولماذا.
+                </p>
+                <form method="post" asp-page-handler="Reopen" asp-route-id="@doc.Id"
+                      style="display:flex;gap:var(--space-2);align-items:flex-start;flex-wrap:wrap;">
+                    <input type="text" name="reason" class="input" required maxlength="500"
+                           placeholder="سبب إعادة الفتح — مثلاً: بند ناقص في الورقة"
+                           style="flex:1;min-width:240px;" />
+                    <button type="submit" class="btn btn-secondary">أعِده للمراجعة</button>
+                </form>
+            </div>
+        </details>
+    }
+    else if (doc.Status == IntakeStatus.Published)
+    {
+        <p class="muted" style="font-size:var(--text-sm);margin:calc(-1 * var(--space-2)) 0 var(--space-4);">
+            المُرحَّل لا يُعاد فتحه — تعديله موضعه
+            <a href="/Quotations/Detail?id=@doc.OdooOrderId">شاشة الأوردر</a>،
+            ليُكتب التعديل في أودو لا عندنا وحدنا.
+        </p>
+    }
+}
+else if (!Model.CanApprove)
+{
+    <div class="alert alert-warning">لك صلاحية الاطّلاع دون الاعتماد، فالحقول غير قابلة للتعديل.</div>
+}
+
+<div class="show-doc-bar" id="show-doc-bar" hidden>
+    <button type="button" class="btn btn-tertiary" id="show-doc">▤ إظهار المستند</button>
+</div>
+
+<div class="review-split" id="review-split">
+
+    <aside class="doc-pane">
+        @if (doc.Pages.Count > 1)
+        {
+            <div class="page-tabs">
+                @foreach (var pg in doc.Pages.OrderBy(p => p.PageNumber))
+                {
+                    <a href="/Documents/Review/@doc.Id?page=@pg.PageNumber"
+                       class="@(pg.PageNumber == Model.CurrentPage ? "on" : "")"
+                       title="@pg.SourceFileName">صفحة @pg.PageNumber</a>
+                }
+            </div>
+        }
+        <div class="doc-head">
+            <span class="name" title="@doc.SourceFileName">
+                @(doc.Pages.Count > 1
+                    ? doc.Pages.FirstOrDefault(p => p.PageNumber == Model.CurrentPage)?.SourceFileName ?? doc.SourceFileName
+                    : doc.SourceFileName)
+            </span>
+            <div class="doc-tools">
+                @if (Model.PreviewKind == "image")
+                {
+                    <button type="button" data-zoom="out" title="تصغير">−</button>
+                    <button type="button" data-zoom="in" title="تكبير">+</button>
+                    <button type="button" data-rotate="90" title="تدوير">⟳</button>
+                    <button type="button" data-zoom="reset" title="إعادة الضبط">↺</button>
+                }
+                <a href="/Documents/Review/@doc.Id?handler=Preview&amp;page=@Model.CurrentPage" target="_blank" title="فتح في تبويب">⤢</a>
+                <button type="button" id="hide-doc" title="إخفاء المستند">✕</button>
+                <a href="/Documents/Review/@doc.Id?handler=Original" title="تنزيل">⤓</a>
+            </div>
+        </div>
+
+        @if (Model.PreviewKind == "sheet")
+        {
+            <iframe class="doc-frame" src="/Documents/Review/@doc.Id?handler=Sheet&amp;page=@Model.CurrentPage" title="الأصل"></iframe>
+        }
+        else if (Model.PreviewKind == "pdf")
+        {
+            <iframe class="doc-frame" src="/Documents/Review/@doc.Id?handler=Preview&amp;page=@Model.CurrentPage" title="الأصل"></iframe>
+        }
+        else if (Model.PreviewKind == "image")
+        {
+            <div class="img-wrap" id="img-wrap">
+                <img id="doc-img" src="/Documents/Review/@doc.Id?handler=Preview&amp;page=@Model.CurrentPage" alt="الأصل" />
+            </div>
+        }
+        else
+        {
+            <div class="doc-missing">
+                هذا النوع لا يُعرض داخل المتصفح.
+                <br />
+                <a href="/Documents/Review/@doc.Id?handler=Original">نزّل الأصل لمراجعته</a>
+            </div>
+        }
+    </aside>
+
+    <form method="post">
+    <input type="hidden" asp-for="Input.DocumentId" value="@doc.Id" />
+
+    <div class="card">
+        <div class="meta">
+            <div>
+                <div class="k">رقم أمر الشراء</div>
+                <div class="v">
+                    @if (editable)
+                    {
+                        <input class="po" asp-for="Input.CustomerPoNumber"
+                               placeholder="غير مقروء — أدخله" />
+                        <span class="origin @(doc.CustomerPoNumber.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @ReviewModel.OriginBadge(doc.CustomerPoNumber.Origin)
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="mono">@(doc.CustomerPoNumber.HasValue ? doc.CustomerPoNumber.Value : "—")</span>
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="k">العميل</div>
+                <div class="v">
+                    @if (editable)
+                    {
+                        <input class="po wide" asp-for="Input.CustomerName" placeholder="غير مقروء — أدخله" />
+                        <span class="origin @(doc.CustomerName.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @ReviewModel.OriginBadge(doc.CustomerName.Origin)
+                        </span>
+                    }
+                    else
+                    {
+                        @(doc.CustomerName.HasValue ? doc.CustomerName.Value : "—")
+                    }
+
+                    @* الورقة كثيراً ما تخلو من اسم العميل وتكتفي بالفرع. فإن
+                       عُرف العميل من الربط عُرض هنا، ومعه من أين جاء — لأنه
+                       ليس مقروءاً من المستند بل مستنتجاً من فرعه. *@
+                    @if (!doc.CustomerName.HasValue && Model.Customer.OdooCustomer is { } linked)
+                    {
+                        <span class="origin human">
+                            @linked —
+                            @(Model.Customer.IsPerDocument ? "مُسنَد لهذا المستند وحده" : "من ربط الفرع بأودو")
+                        </span>
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="k">الفرع</div>
+                <div class="v">
+                    @if (editable)
+                    {
+                        <input class="po wide" asp-for="Input.BranchLabel" placeholder="غير مقروء — أدخله" />
+                        <span class="origin @(doc.BranchLabel.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @ReviewModel.OriginBadge(doc.BranchLabel.Origin)
+                        </span>
+                    }
+                    else
+                    {
+                        @(doc.BranchLabel.HasValue ? doc.BranchLabel.Value : "—")
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="k">تاريخ الأمر</div>
+                <div class="v">
+                    @if (editable)
+                    {
+                        <input class="po" type="date" name="Input.OrderDate" value="@ReviewModel.Date(doc.OrderDate)" />
+                        <span class="origin @(doc.OrderDate.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @ReviewModel.OriginBadge(doc.OrderDate.Origin)
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="mono">@(doc.OrderDate.HasValue ? ReviewModel.Date(doc.OrderDate) : "—")</span>
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="k">تاريخ التسليم</div>
+                <div class="v">
+                    @if (editable)
+                    {
+                        <input class="po" type="date" name="Input.DeliveryDate" value="@ReviewModel.Date(doc.DeliveryDate)" />
+                        <span class="origin @(doc.DeliveryDate.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @ReviewModel.OriginBadge(doc.DeliveryDate.Origin)
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="mono">@(doc.DeliveryDate.HasValue ? ReviewModel.Date(doc.DeliveryDate) : "—")</span>
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="k">طريقة القراءة</div>
+                <div class="v">@(doc.Strategy == ExtractionStrategy.PdfTextLayer ? "طبقة نص" : "تعرّف ضوئي")</div>
+            </div>
+            <div>
+                <div class="k">رفعه</div>
+                <div class="v">@(doc.UploadedBy?.FullName ?? "—")</div>
+            </div>
+            <div>
+                <div class="k">ربط أودو</div>
+                <div class="v" style="font-size:.8125rem;">
+                    @if (Model.Customer.OdooCustomer is { } assigned)
+                    {
+                        <span style="color:var(--color-success);">@assigned</span>
+                        @if (Model.Customer.IsPerDocument)
+                        {
+                            <span class="raw">لهذا المستند وحده — لا عبر الفرع</span>
+                        }
+                    }
+                    else
+                    {
+                        <span style="color:#B45309;">بلا ربط —</span>
+                        <a href="/Mappings?prefill=@Uri.EscapeDataString(Model.BranchHint)"
+                           class="link-btn">اربطه الآن</a>
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="k">الصفحات</div>
+                <div class="v">@(doc.Pages.Count == 0 ? 1 : doc.Pages.Count)</div>
+            </div>
+            <div>
+                <div class="k">الملف</div>
+                <div class="v" style="font-size:.8125rem;">
+                    @doc.SourceFileName
+                    @if (!doc.HasLocalFile)
+                    {
+                        <span class="raw">
+                            الأصل في أودو (مرفق @doc.OdooAttachmentId) — حُذف من قرصنا
+                            @doc.FileRemovedDate?.ToString("yyyy-MM-dd")
+                        </span>
+                    }
+                    else if (doc.OdooAttachmentId is not null)
+                    {
+                        <span class="raw">مرفوعٌ على الأوردر (مرفق @doc.OdooAttachmentId)</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table class="lines">
+            <thead>
+                <tr>
+                    <th class="num">م</th>
+                    <th style="width:190px;">الكود</th>
+                    <th>البيان</th>
+                    <th class="num qty">مطلوب</th>
+                    @if (isDelivery) { <th class="num qty">مستلم</th> }
+                    <th class="num">ثقة</th>
+                    @if (editable) { <th class="num">حذف</th> }
+                </tr>
+            </thead>
+            <tbody>
+            @{ var i = 0; }
+            @foreach (var line in doc.Lines.OrderBy(l => l.Sequence))
+            {
+                <tr class="@(line.MinConfidence < 0.90 ? "low" : "")">
+                    <td class="num mono">@line.Sequence</td>
+                    <td>
+                        @if (editable)
+                        {
+                            <input type="hidden" name="Input.Lines[@i].LineId" value="@line.Id" />
+                            <input class="cell mono barcode-field" name="Input.Lines[@i].Barcode"
+                                   value="@ReviewModel.Shown(line.Barcode)"
+                                   data-row="@i" autocomplete="off" />
+                        }
+                        else
+                        {
+                            <span class="mono">@(line.Barcode.HasValue ? line.Barcode.Value : "—")</span>
+                        }
+                        <span class="origin @(line.Barcode.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @ReviewModel.OriginBadge(line.Barcode.Origin)
+                            @if (!string.IsNullOrEmpty(line.Barcode.RawText) && line.Barcode.Origin == ValueOrigin.HumanEntry)
+                            {
+                                <text> — كان: @line.Barcode.RawText</text>
+                            }
+                        </span>
+
+                        @* حال المطابقة قُدّام السطر نفسه: المراجع يحتاج أن يرى
+                           ما طابقه هذا الرمز، لا أن يُقال له إن ثمة خطأً في
+                           مكانٍ ما من المستند. *@
+                        @{ var match = Model.Matches.For(line.Sequence); }
+                        <span class="match-slot" data-row="@i"></span>
+                        @if (Model.Matches.Answered || match.CheckDigitBroken)
+                        {
+                            if (match.Found)
+                            {
+                                <span class="match ok" title="@match.Product">✔ @match.Product</span>
+                            }
+                            else if (match.CheckDigitBroken)
+                            {
+                                <span class="match bad">✕ رقم التحقق مكسور — خانةٌ قُرئت خطأً</span>
+                            }
+                            else
+                            {
+                                <span class="match bad">✕ لا منتج بهذا الرمز في أودو</span>
+
+                                @if (match.Suggestions.Count > 0 && editable)
+                                {
+                                    <span class="match near">أقرب الرموز — اضغط لتضعه:</span>
+                                    <span class="near-list">
+                                        @foreach (var near in match.Suggestions)
+                                        {
+                                            <button type="button" class="near-pick"
+                                                    data-target="Input.Lines[@i].Barcode"
+                                                    data-code="@near.Code"
+                                                    title="@near.Product">@near.Code</button>
+                                        }
+                                    </span>
+                                }
+                            }
+                        }
+                    </td>
+                    <td>
+                        @if (editable)
+                        {
+                            <input class="cell description-field" name="Input.Lines[@i].Description"
+                                   value="@ReviewModel.Shown(line.Description)" data-row="@i" />
+
+                            @* البيان الفارغ لا يُملأ من أودو تلقائياً: اسم أودو
+                               ليس ما في الورقة، وكتابتُه كأنه مقروءٌ منها يكذب
+                               على من يقرأ السجل بعدُ. يُعرض ويُعتمد بضغطة،
+                               فيُسجَّل حينئذٍ بمصدر «إدخال بشري». *@
+                            @if (!line.Description.HasValue && match.Found && match.Product is { } odooName)
+                            {
+                                <span class="from-odoo" data-row="@i">
+                                    البيان فارغ في المستند — في أودو:
+                                    <button type="button" class="adopt" data-row="@i"
+                                            data-name="@odooName">@odooName</button>
+                                </span>
+                            }
+                        }
+                        else
+                        {
+                            @ReviewModel.Shown(line.Description)
+                        }
+                        <span class="origin @(line.Description.Origin == ValueOrigin.HumanEntry ? "human" : "")">
+                            @if (line.Description.Origin == ValueOrigin.HumanEntry && !string.IsNullOrEmpty(line.Description.RawText))
+                            {
+                                <text>بشري — كان: @line.Description.RawText</text>
+                            }
+                        </span>
+                    </td>
+                    <td class="num qty">
+                        @if (editable)
+                        {
+                            <input class="cell mono" type="number" step="any" name="Input.Lines[@i].OrderedQty"
+                                   value="@ReviewModel.Number(line.OrderedQty)" dir="ltr" />
+                        }
+                        else
+                        {
+                            <span class="mono">@(line.OrderedQty.HasValue ? ReviewModel.Number(line.OrderedQty) : "—")</span>
+                        }
+                    </td>
+                    @if (isDelivery)
+                    {
+                        <td class="num qty">
+                            @if (editable)
+                            {
+                                <input class="cell mono" type="number" step="any" name="Input.Lines[@i].ReceivedQty"
+                                       value="@ReviewModel.Number(line.ReceivedQty)" dir="ltr" />
+                            }
+                            else
+                            {
+                                <span class="mono">@(line.ReceivedQty.HasValue ? ReviewModel.Number(line.ReceivedQty) : "—")</span>
+                            }
+                        </td>
+                    }
+                    <td class="num mono">@line.MinConfidence.ToString("P0")</td>
+                    @if (editable)
+                    {
+                        <td class="num">
+                            <input type="checkbox" name="Input.Lines[@i].Remove" value="true" title="احذف هذا البند" />
+                        </td>
+                    }
+                </tr>
+                i++;
+            }
+            </tbody>
+        </table>
+
+        @if (editable)
+        {
+            <div class="add-bar">
+                <button type="button" class="btn btn-tertiary btn-sm" id="add-line">+ إضافة بند</button>
+                <span class="hint">البند المضاف مصدره بشري، ولا بد له من كود ليُطابَق بمنتج.</span>
+            </div>
+        }
+    </div>
+
+    @if (editable)
+    {
+        @* قالب الصف الجديد: معرّفه صفر، وبه يعرف الخادم أنه إضافة لا تعديل. *@
+        <template id="line-template">
+            <tr class="added">
+                <td class="num mono">جديد</td>
+                <td>
+                    <input type="hidden" name="Input.Lines[__I__].LineId" value="0" />
+                    <input class="cell mono" name="Input.Lines[__I__].Barcode" placeholder="الكود" dir="ltr" />
+                </td>
+                <td><input class="cell" name="Input.Lines[__I__].Description" placeholder="البيان" /></td>
+                <td class="num qty">
+                    <input class="cell mono" type="number" step="any" name="Input.Lines[__I__].OrderedQty" dir="ltr" />
+                </td>
+                @if (isDelivery)
+                {
+                    <td class="num qty">
+                        <input class="cell mono" type="number" step="any" name="Input.Lines[__I__].ReceivedQty" dir="ltr" />
+                    </td>
+                }
+                <td class="num mono">—</td>
+                <td class="num"><button type="button" class="drop-row" title="أزل الصف">×</button></td>
+            </tr>
+        </template>
+    }
+
+    @if (doc.Issues.Count > 0)
+    {
+        <div class="card">
+            @{
+                var open = doc.Issues.Where(i => !i.Resolved).OrderByDescending(i => i.Severity).ToList();
+                var settled = doc.Issues.Where(i => i.Resolved).OrderByDescending(i => i.Severity).ToList();
+            }
+
+            <div class="k" style="margin-bottom:var(--space-3);">
+                ملاحظات المعالجة
+                @if (open.Count == 0 && settled.Count > 0)
+                {
+                    <span style="color:var(--color-success);">— لم يبق منها شيء قائم</span>
+                }
+            </div>
+
+            @* القائم أولاً وبلونه، والمحلول بعده محايداً وموسوماً. الملاحظة
+               المحلولة تبقى لأنها أثر ما كان، لا لأنها ما زالت مشكلة —
+               وعرضها بلون الخطر يجعل المراجع يبحث عمّا عولج بالفعل. *@
+            @foreach (var issue in open)
+            {
+                <div class="issue issue-@issue.Severity">
+                    <code>@issue.Code</code>
+                    <span>
+                        @issue.Message
+                        @if (issue.LineSequence.HasValue) { <text> (بند @issue.LineSequence)</text> }
+                    </span>
+                </div>
+            }
+
+            @foreach (var issue in settled)
+            {
+                <div class="issue issue-Info done">
+                    <span class="badge badge-success" style="flex-shrink:0;">حُلَّت</span>
+                    <code>@issue.Code</code>
+                    <span style="text-decoration:line-through;text-decoration-color:var(--neutral-400);">
+                        @issue.Message
+                        @if (issue.LineSequence.HasValue) { <text> (بند @issue.LineSequence)</text> }
+                    </span>
+                </div>
+            }
+        </div>
+    }
+
+    @if (editable)
+    {
+        <div class="card">
+            <div class="actions">
+                <div class="grow">
+                    <textarea class="reason" asp-for="Input.Note" rows="2"
+                              placeholder="ملاحظة المراجع — إلزامية عند الرفض"></textarea>
+                </div>
+                <button type="submit" class="btn btn-secondary" asp-page-handler="Save">حفظ التعديلات</button>
+                <button type="submit" class="btn ok" asp-page-handler="Approve">اعتماد</button>
+                <button type="submit" class="btn bad" asp-page-handler="Reject">رفض</button>
+            </div>
+        </div>
+    }
+
+    @* الترحيل خارج نموذج المراجعة: هو فعلٌ على مستندٍ معتمد، لا حقلٌ يُحفظ معه. *@
+</form>
+
+@if (Model.CanApprove)
+{
+    @* الأرشفة آخر ما في الصفحة وأهدأ ما فيها: فعلٌ يُتاح ولا يُغرى به. *@
+    <form method="post" asp-page-handler="Archive" asp-route-id="@doc.Id"
+          style="margin:var(--space-4) 0;"
+          onsubmit="return confirm('أرشفة هذا المستند؟ يختفي من الشاشات ويبقى الملف الأصلي، ويمكن إعادته من مرشِّح «المؤرشف».');">
+        <button type="submit" class="btn btn-tertiary btn-sm">أرشِف هذا المستند</button>
+        <span class="t-caption muted" style="margin-inline-start:var(--space-3);">
+            إخفاء لا محو — الأصل يبقى والإعادة ممكنة.
+            @if (doc.IsPublished)
+            {
+                <text>وأوردر أودو <strong>@doc.OdooOrderName</strong> لا يتأثر.</text>
+            }
+        </span>
+    </form>
+}
+
+@if (Model.CanApprove && doc.Status == IntakeStatus.Approved && !doc.IsPublished)
+{
+    <div class="card">
+        <div class="actions">
+            <div class="grow">
+                <div class="t-body-sm" style="font-weight:600;">الترحيل إلى أودو</div>
+                <p class="t-caption muted" style="margin:var(--space-1) 0 0;">
+                    @if (Model.CanPublishToOdoo)
+                    {
+                        <text>
+                            يُنشأ <strong>عرض سعر</strong> على قاعدة
+                            <span class="mono">@Model.OdooDatabase</span> — غير مؤكَّد، فلا يحجز
+                            مخزوناً ولا يولّد إذن تسليم. التأكيد من أودو بعد المراجعة هناك.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>
+                            الترحيل المباشر مغلق في الإعدادات. نزّل ملف الاستيراد وارفعه في أودو،
+                            أو علّم «اسمح بالكتابة في أودو» على الوصلة المعمول بها من
+                            <a href="/Settings/Odoo">إعدادات أودو</a>، بعد التجربة على قاعدة اختبار.
+                        </text>
+                    }
+                </p>
+            </div>
+
+            <form method="post" asp-page-handler="Publish" asp-route-id="@doc.Id" style="margin:0;"
+                  onsubmit="this.querySelector('button').disabled = true;
+                            this.querySelector('button').textContent = 'جارٍ الترحيل…';">
+                <button type="submit" class="btn" @(Model.CanPublishToOdoo ? "" : "disabled")>
+                    رحّل إلى أودو
+                </button>
+            </form>
+        </div>
+    </div>
+}
+
+</div>
+
+@if (editable)
+{
+    <script>
+        (function () {
+            var docId = @doc.Id;
+
+            // الرمز المقترح يوضع في خانته بضغطة: نسخه بالعين هو ذات الخطأ الذي
+            // وُضع الاقتراح ليرفعه.
+            document.addEventListener('click', function (event) {
+                var pick = event.target.closest('.near-pick');
+                if (pick) {
+                    var field = document.getElementsByName(pick.dataset.target)[0];
+                    if (field) {
+                        field.value = pick.dataset.code;
+                        field.focus();
+                        lookup(field);
+                    }
+                    return;
+                }
+
+                // اسم أودو يُعتمد بضغطة، فيصير بياناً مصدره إنسان.
+                var adopt = event.target.closest('.adopt');
+                if (adopt) {
+                    var row = adopt.dataset.row;
+                    var description = document.querySelector('.description-field[data-row="' + row + '"]');
+                    if (description) {
+                        description.value = adopt.dataset.name;
+                        description.focus();
+                    }
+                    var hint = document.querySelector('.from-odoo[data-row="' + row + '"]');
+                    if (hint) hint.remove();
+                }
+            });
+
+            function render(slot, data) {
+                slot.innerHTML = '';
+                if (!data) return;
+
+                var line = document.createElement('span');
+                line.className = 'match ' + (data.found ? 'ok' : 'bad');
+                line.textContent = data.found
+                    ? '✔ ' + data.product
+                    : (data.brokenCheckDigit
+                        ? '✕ رقم التحقق مكسور — خانةٌ قُرئت خطأً'
+                        : '✕ لا منتج بهذا الرمز في أودو');
+                slot.appendChild(line);
+
+                if (data.found || !data.suggestions || !data.suggestions.length) return;
+
+                var label = document.createElement('span');
+                label.className = 'match near';
+                label.textContent = 'أقرب الرموز — اضغط لتضعه:';
+                slot.appendChild(label);
+
+                var list = document.createElement('span');
+                list.className = 'near-list';
+
+                data.suggestions.forEach(function (item) {
+                    var button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'near-pick';
+                    button.textContent = item.code;
+                    button.title = item.product;
+                    button.dataset.code = item.code;
+                    button.dataset.target = 'Input.Lines[' + slot.dataset.row + '].Barcode';
+                    list.appendChild(button);
+                });
+
+                slot.appendChild(list);
+            }
+
+            var timers = {};
+
+            // يُسأل أودو بعد أن يسكت المستخدم، لا مع كل ضغطة حرف: خادمهم بطيء،
+            // ونداءٌ لكل خانة يغرقه بلا فائدة.
+            function lookup(field) {
+                var row = field.dataset.row;
+                var slot = document.querySelector('.match-slot[data-row="' + row + '"]');
+                if (!slot) return;
+
+                var code = field.value.trim();
+
+                // الحال المعروضة من الخادم تُمحى فور التغيير: عرضُ نتيجة رمزٍ
+                // قديم قُدّام رمزٍ جديد أسوأ من لا شيء.
+                var served = slot.parentElement.querySelectorAll('.match, .near-list');
+                served.forEach(function (el) { if (!slot.contains(el)) el.remove(); });
+
+                clearTimeout(timers[row]);
+
+                if (code.length < 6) { slot.innerHTML = ''; return; }
+
+                slot.innerHTML = '<span class="match pending">…يُبحث في أودو</span>';
+
+                timers[row] = setTimeout(function () {
+                    fetch('/Documents/Review/' + docId + '?handler=Lookup&code=' + encodeURIComponent(code))
+                        .then(function (r) { return r.ok ? r.json() : null; })
+                        .then(function (data) { render(slot, data); })
+                        .catch(function () { slot.innerHTML = ''; });
+                }, 450);
+            }
+
+            document.querySelectorAll('.barcode-field').forEach(function (field) {
+                field.addEventListener('input', function () { lookup(field); });
+            });
+        })();
+    </script>
+    <script>
+        (function () {
+            var body = document.querySelector('table.lines tbody');
+            var template = document.getElementById('line-template');
+            var addButton = document.getElementById('add-line');
+            if (!body || !template || !addButton) return;
+
+            // الفهرس يبدأ بعد آخر صف موجود. ربط النموذج يحتاج فهارس متصلة،
+            // فيُحسب من العدد الحالي لا من ترتيب البند في المستند.
+            var next = body.querySelectorAll('tr').length;
+
+            addButton.addEventListener('click', function () {
+                var markup = template.innerHTML.split('__I__').join(String(next));
+                next = next + 1;
+
+                var holder = document.createElement('tbody');
+                holder.innerHTML = markup;
+
+                var row = holder.querySelector('tr');
+                body.appendChild(row);
+                var first = row.querySelector('input.mono');
+                if (first) first.focus();
+            });
+
+            body.addEventListener('click', function (e) {
+                var drop = e.target.closest('.drop-row');
+                if (drop) drop.closest('tr').remove();
+            });
+        })();
+    </script>
+}
+
+@if (Model.PreviewKind == "image")
+{
+    <script>
+        (function () {
+            var img = document.getElementById('doc-img');
+            if (!img) return;
+
+            var scale = 1, angle = 0;
+
+            function apply() {
+                img.style.transform = 'scale(' + scale + ') rotate(' + angle + 'deg)';
+            }
+
+            document.querySelectorAll('[data-zoom], [data-rotate]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var z = b.getAttribute('data-zoom');
+                    if (z === 'in') scale = Math.min(scale * 1.25, 8);
+                    else if (z === 'out') scale = Math.max(scale / 1.25, 0.25);
+                    else if (z === 'reset') { scale = 1; angle = 0; }
+                    else angle = (angle + 90) % 360;
+                    apply();
+                });
+            });
+
+            // صور الهاتف تحتاج تكبيراً كثيراً، فعجلة الفأرة أسرع من الأزرار.
+            document.getElementById('img-wrap').addEventListener('wheel', function (e) {
+                if (!e.ctrlKey) return;
+                e.preventDefault();
+                scale = e.deltaY < 0 ? Math.min(scale * 1.1, 8) : Math.max(scale / 1.1, 0.25);
+                apply();
+            }, { passive: false });
+        })();
+    </script>
+}
+
+<script>
+    (function () {
+        var split = document.getElementById('review-split');
+        var bar = document.getElementById('show-doc-bar');
+        var hide = document.getElementById('hide-doc');
+        var show = document.getElementById('show-doc');
+        if (!split || !bar) return;
+
+        var KEY = 'yelglens.review.docHidden';
+
+        function apply(hidden) {
+            split.classList.toggle('no-doc', hidden);
+            bar.hidden = !hidden;
+        }
+
+        // الاختيار يُحفظ في المتصفح: من يفضّل الجدول وحده لا يعيد الإخفاء
+        // مع كل مستند. والتخزين قد يكون ممنوعاً في بعض الإعدادات فيُحاط بحارس.
+        var saved = false;
+        try { saved = localStorage.getItem(KEY) === '1'; } catch (e) { }
+        apply(saved);
+
+        function set(hidden) {
+            apply(hidden);
+            try { localStorage.setItem(KEY, hidden ? '1' : '0'); } catch (e) { }
+        }
+
+        if (hide) hide.addEventListener('click', function () { set(true); });
+        if (show) show.addEventListener('click', function () { set(false); });
+    })();
+</script>

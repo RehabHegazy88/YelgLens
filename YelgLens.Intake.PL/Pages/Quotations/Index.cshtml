@@ -1,0 +1,174 @@
+@page "/Quotations"
+@model YelgLens.Intake.PL.Pages.Quotations.IndexModel
+@{
+    ViewData["Title"] = "أوردرات أودو";
+    Layout = "Shared/_Layout";
+
+    var result = Model.Result;
+}
+
+<div class="page-head">
+    <div>
+        <h1>أوردرات أودو</h1>
+        <p class="t-body-sm muted">
+            استعلام مباشر عن أوامر البيع في
+            <span class="mono">@Model.Database</span> — بلا فتح أودو وبلا نقل أرقام بالعين.
+            قراءة فقط: لا يُنشأ هنا شيء ولا يُعدَّل.
+        </p>
+    </div>
+    <a class="btn btn-secondary" href="/Documents">قائمة المراجعة</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-error" role="status" style="margin-bottom:var(--space-5);">@Model.Error</div>
+}
+
+@if (Model.PartnerId is not null)
+{
+    <div class="alert alert-info" role="status" style="margin-bottom:var(--space-4);
+                background:var(--color-info-surface);border-color:var(--color-info-border);
+                color:var(--color-info);">
+        معروضٌ أوردرات فرعٍ واحد: <strong>&nbsp;@(Model.PartnerName ?? $"#{Model.PartnerId}")</strong>
+        <a class="link-btn" href="/Quotations" style="margin-inline-start:var(--space-3);">اعرض الكل</a>
+    </div>
+}
+
+@if (Model.IsAvailable)
+{
+    <form method="get" class="filter-bar" style="margin-bottom:var(--space-5);">
+        <div class="field" style="flex:1 1 240px;">
+            <label class="t-label" for="q">بحث</label>
+            <input class="input" type="search" id="q" name="q" value="@Model.Q"
+                   placeholder="رقم الأوردر أو العميل أو مرجع العميل" />
+        </div>
+
+        <div class="field">
+            <label class="t-label" for="state">الحالة</label>
+            <select class="select" id="state" name="state">
+                @foreach (var (value, label) in YelgLens.Intake.PL.Pages.Quotations.IndexModel.States)
+                {
+                    <option value="@value" selected="@((Model.State ?? "") == value)">@label</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label class="t-label" for="from">من تاريخ</label>
+            <input class="input" type="date" id="from" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+        </div>
+
+        <div class="field">
+            <label class="t-label" for="to">إلى تاريخ</label>
+            <input class="input" type="date" id="to" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+        </div>
+
+        <div class="field">
+            <label class="t-label" for="size">لكل صفحة</label>
+            <select class="select" id="size" name="size">
+                @foreach (var size in YelgLens.Intake.PL.Pages.Quotations.IndexModel.PageSizes)
+                {
+                    <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+                }
+            </select>
+        </div>
+
+        @if (Model.PartnerId is { } keep)
+        {
+            <input type="hidden" name="partner" value="@keep" />
+        }
+
+        <div class="field" style="align-self:flex-end;flex-direction:row;gap:var(--space-2);">
+            <button type="submit" class="btn">بحث</button>
+            @if (Model.HasFilter)
+            {
+                <a class="btn btn-tertiary" href="/Quotations">مسح</a>
+            }
+        </div>
+    </form>
+
+    @if (result.Total == 0)
+    {
+        <div class="empty">
+            <p class="t-body">
+                @(Model.HasFilter ? "لا أوردر يطابق هذا البحث." : "لا أوردرات في هذه القاعدة.")
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                    <tr>
+                        <th>الأوردر</th>
+                        <th>العميل</th>
+                        <th>مرجع العميل</th>
+                        <th>التاريخ</th>
+                        <th class="num">الإجمالي</th>
+                        <th>الحالة</th>
+                        <th>مستندنا</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var order in result.Items)
+                {
+                    <tr>
+                        <td><a class="link-btn mono" href="/Quotations/@order.Id">@order.Name</a></td>
+                        <td style="white-space:normal;max-width:34ch;">@order.Customer</td>
+                        <td class="mono">@(order.Reference ?? "—")</td>
+                        <td class="mono">@(order.OrderDate?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                        <td class="num">@order.Total.ToString("N2") @order.Currency</td>
+                        <td>
+                            <span class="badge @order.StateBadge">@order.StateLabel</span>
+                        </td>
+                        <td>
+                            @* الأوردر الذي أنشأناه يُفتح مستندُه من هنا — وهذا ما
+                               يُغني عن المقارنة بالذاكرة بين شاشتين. *@
+                            @if (Model.DocumentByOrderId.TryGetValue(order.Id, out var documentId))
+                            {
+                                <a class="link-btn" href="/Documents/Review/@documentId">#@documentId</a>
+                            }
+                            else
+                            {
+                                <span class="t-caption muted" title="لم يُنشأ من هذا النظام">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
+                    flex-wrap:wrap;margin-top:var(--space-4);">
+            <p class="t-body-sm muted" style="margin:0;">
+                <span class="mono">@result.FirstIndex</span>–<span class="mono">@result.LastIndex</span>
+                من <span class="mono">@result.Total</span>
+            </p>
+
+            @if (result.PageCount > 1)
+            {
+                <nav class="pagination" aria-label="صفحات النتائج">
+                    <a class="btn btn-tertiary btn-sm @(result.HasPrevious ? "" : "is-disabled")"
+                       asp-page="/Quotations/Index" asp-all-route-data="@Model.Link(page: result.Page - 1)">السابق</a>
+
+                    @{
+                        var first = Math.Max(1, result.Page - 2);
+                        var last = Math.Min(result.PageCount, first + 4);
+                        first = Math.Max(1, last - 4);
+                    }
+
+                    @for (var n = first; n <= last; n++)
+                    {
+                        <a asp-page="/Quotations/Index" asp-all-route-data="@Model.Link(page: n)"
+                           aria-current="@(n == result.Page ? "page" : null)">@n</a>
+                    }
+
+                    <a class="btn btn-tertiary btn-sm @(result.HasNext ? "" : "is-disabled")"
+                       asp-page="/Quotations/Index" asp-all-route-data="@Model.Link(page: result.Page + 1)">التالي</a>
+                </nav>
+            }
+        </div>
+    }
+}

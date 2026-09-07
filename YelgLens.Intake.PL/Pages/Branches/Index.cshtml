@@ -1,0 +1,225 @@
+﻿@page "/Branches"
+@model YelgLens.Intake.PL.Pages.Branches.IndexModel
+@{
+    ViewData["Title"] = "دليل الفروع";
+    Layout = "Shared/_Layout";
+
+    var result = Model.Result;
+}
+
+<style>
+    .stat-row { display:flex; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-5); }
+    .stat-box {
+        background:var(--color-surface); border:var(--border-hairline) solid var(--color-border);
+        border-radius:var(--radius-md); padding:var(--space-3) var(--space-5); min-width:150px;
+    }
+    .stat-box .k { font-size:var(--text-caption); color:var(--color-text-tertiary); }
+    .stat-box .v { font-size:1.35rem; font-weight:700; font-variant-numeric:tabular-nums;
+                   direction:ltr; text-align:start; color:var(--color-brand-navy); }
+</style>
+
+<div class="page-head">
+    <div>
+        <h1>دليل الفروع</h1>
+        <p class="t-body-sm muted">
+            كل عملاء أودو في <span class="mono">@Model.Source</span>، ومعهم حال ربطهم بمستنداتنا
+            وعدد أوردراتهم. من هنا تُربط الفروع وتُفتح أوردراتها.
+        </p>
+    </div>
+
+
+    <a class="btn btn-secondary" href="/Mappings">شاشة الربط</a>
+</div>
+
+@if (Model.CustomerStatus is { NeedsSync: true } sync)
+{
+    <div class="alert alert-warning" role="alert" style="margin-bottom:var(--space-4);">
+        <strong>لا كشف عملاء لقاعدة <span class="mono">@sync.Source</span> بعد.</strong>
+        <p style="margin:var(--space-2) 0 0;font-size:var(--text-sm);">
+            الأسماء تُؤخذ من القاعدة المتصل بها وحدها، ولا تُعرض أسماء من قاعدةٍ أخرى:
+            اسمٌ غير موجود هناك يُرفض عند الترحيل، أو — أسوأ — يُنشئ الأوردر على عميلٍ غير المقصود.
+            @if (sync.SheetIgnored)
+            {
+                <text> (عندنا @sync.SheetCount اسماً من كشفٍ مرفوع، لكنها ليست لهذه القاعدة فلا تُعرض.)</text>
+            }
+        </p>
+        <p style="margin:var(--space-2) 0 0;font-size:var(--text-sm);">
+            زامِن الكشف من أودو أولاً.
+        </p>
+    </div>
+}
+
+
+<div class="stat-row">
+    <div class="stat-box">
+        <div class="k">فروع أودو</div>
+        <div class="v">@Model.TotalCustomers</div>
+    </div>
+    <div class="stat-box">
+        <div class="k">مربوط بمستنداتنا</div>
+        <div class="v">@Model.MappedCount</div>
+    </div>
+    <div class="stat-box">
+        <div class="k">بلا ربط</div>
+        <div class="v">@(Model.TotalCustomers - Model.MappedCount)</div>
+    </div>
+    <div class="stat-box">
+        <div class="k">سلاسل</div>
+        <div class="v">@Model.Parents.Count</div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.CountError))
+{
+    <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-4);">
+        @Model.CountError — الدليل معروض بلا عدّادات.
+    </div>
+}
+
+<form method="get" class="filter-bar" style="margin-bottom:var(--space-5);">
+    <div class="field" style="flex:1 1 220px;">
+        <label class="t-label" for="q">بحث</label>
+        <input class="input" type="search" id="q" name="q" value="@Model.Q"
+               placeholder="اسم الفرع أو رقم المحل" />
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="parent">السلسلة</label>
+        <select class="select" id="parent" name="parent">
+            <option value="">كل السلاسل</option>
+            @foreach (var parent in Model.Parents)
+            {
+                <option value="@parent" selected="@(Model.Parent == parent)">@parent</option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="link">حال الربط</label>
+        <select class="select" id="link" name="link">
+            <option value="" selected="@string.IsNullOrEmpty(Model.Link)">الكل</option>
+            <option value="mapped" selected="@(Model.Link == "mapped")">مربوط</option>
+            <option value="unmapped" selected="@(Model.Link == "unmapped")">بلا ربط</option>
+        </select>
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="size">لكل صفحة</label>
+        <select class="select" id="size" name="size">
+            @foreach (var size in YelgLens.Intake.PL.Pages.Branches.IndexModel.PageSizes)
+            {
+                <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+            }
+        </select>
+    </div>
+
+    <div class="field" style="align-self:flex-end;flex-direction:row;gap:var(--space-2);">
+        <button type="submit" class="btn">بحث</button>
+        @if (Model.HasFilter)
+        {
+            <a class="btn btn-tertiary" href="/Branches">مسح</a>
+        }
+    </div>
+</form>
+
+@if (result.Total == 0)
+{
+    <div class="empty">
+        <p class="t-body">
+            @(Model.HasFilter
+                ? "لا فرع يطابق هذا البحث."
+                : "لا فروع بعد. اسحب كشف العملاء من شاشة الربط.")
+        </p>
+    </div>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>السلسلة</th>
+                    <th>الفرع في أودو</th>
+                    <th class="num">DS</th>
+                    <th>الربط بمستنداتنا</th>
+                    <th class="num">أوردرات</th>
+                    <th><span class="sr-only">إجراء</span></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in result.Items)
+            {
+                <tr>
+                    <td>@(row.Customer.ParentName ?? "—")</td>
+                    <td style="white-space:normal;max-width:34ch;">@row.Customer.Name</td>
+                    <td class="num">@(row.Customer.StoreNumber?.ToString() ?? "—")</td>
+                    <td>
+                        @if (row.Mapping is { } mapping)
+                        {
+                            <span class="badge badge-success" title="@mapping.SourceLabel">مربوط</span>
+                            <span class="raw">@mapping.SourceLabel</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-neutral">بلا ربط</span>
+                        }
+                    </td>
+                    <td class="num">
+                        @if (row.Orders > 0)
+                        {
+                            <a class="link-btn" href="/Quotations?partner=@row.PartnerId">@row.Orders</a>
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
+                    <td>
+                        <div class="row" style="gap:var(--space-2);flex-wrap:nowrap;">
+                            @if (row.Mapping is { } edit)
+                            {
+                                <a class="link-btn" href="/Mappings?edit=@edit.Id">عدّل الربط</a>
+                            }
+                            else
+                            {
+                                <a class="link-btn" href="/Mappings">اربطه</a>
+                            }
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
+                flex-wrap:wrap;margin-top:var(--space-4);">
+        <p class="t-body-sm muted" style="margin:0;">
+            <span class="mono">@result.FirstIndex</span>–<span class="mono">@result.LastIndex</span>
+            من <span class="mono">@result.Total</span>
+        </p>
+
+        @if (result.PageCount > 1)
+        {
+            <nav class="pagination" aria-label="صفحات النتائج">
+                <a class="btn btn-tertiary btn-sm @(result.HasPrevious ? "" : "is-disabled")"
+                   asp-page="/Branches/Index" asp-all-route-data="@Model.LinkTo(page: result.Page - 1)">السابق</a>
+
+                @{
+                    var first = Math.Max(1, result.Page - 2);
+                    var last = Math.Min(result.PageCount, first + 4);
+                    first = Math.Max(1, last - 4);
+                }
+
+                @for (var n = first; n <= last; n++)
+                {
+                    <a asp-page="/Branches/Index" asp-all-route-data="@Model.LinkTo(page: n)"
+                       aria-current="@(n == result.Page ? "page" : null)">@n</a>
+                }
+
+                <a class="btn btn-tertiary btn-sm @(result.HasNext ? "" : "is-disabled")"
+                   asp-page="/Branches/Index" asp-all-route-data="@Model.LinkTo(page: result.Page + 1)">التالي</a>
+            </nav>
+        }
+    </div>
+}

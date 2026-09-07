@@ -1,0 +1,41 @@
+@page
+@model YelgLens.Intake.PL.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "تسجيل الدخول";
+    Layout = "Shared/_Layout";
+}
+
+<div class="login-wrap">
+    <div class="card">
+        <h1 class="t-h4" style="margin:0 0 var(--space-1);">استقبال مستندات الموردين</h1>
+        <p class="t-body-sm muted" style="margin:0 0 var(--space-6);">سجّل دخولك للمتابعة.</p>
+
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <div class="alert alert-error" role="alert">@Model.ErrorMessage</div>
+        }
+
+        <form method="post">
+            <div class="stack">
+                <div class="field">
+                    <label class="t-label" asp-for="Input.Email">البريد الإلكتروني</label>
+                    <input class="input" asp-for="Input.Email" autocomplete="username" dir="ltr" />
+                    <span class="field-error" asp-validation-for="Input.Email"></span>
+                </div>
+
+                <div class="field">
+                    <label class="t-label" asp-for="Input.Password">كلمة المرور</label>
+                    <input class="input" asp-for="Input.Password" autocomplete="current-password" dir="ltr" />
+                    <span class="field-error" asp-validation-for="Input.Password"></span>
+                </div>
+
+                <label class="check">
+                    <input asp-for="Input.RememberMe" type="checkbox" />
+                    <span class="t-body-sm">أبقني مسجَّلاً</span>
+                </label>
+
+                <button type="submit" class="btn btn-block">دخول</button>
+            </div>
+        </form>
+    </div>
+</div>

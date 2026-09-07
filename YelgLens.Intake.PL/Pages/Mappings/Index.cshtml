@@ -1,0 +1,447 @@
+﻿@page "/Mappings"
+@model YelgLens.Intake.PL.Pages.Mappings.IndexModel
+@{
+    ViewData["Title"] = "ربط الفروع بأودو";
+    Layout = "Shared/_Layout";
+}
+
+<div class="page-head">
+    <div>
+        <h1>ربط الفروع بأودو</h1>
+        <p class="t-body-sm muted">
+            المستند يكتب الفرع بصيغته، وأودو يعرفه بصيغة أخرى. هذا الجدول هو الجسر بينهما،
+            ومنه يُملأ عمود <code>Customer</code> في ملف الاستيراد. بلا ربطٍ لا يُولَّد الملف —
+            لأن أوردراً بعميل خاطئ أسوأ من أوردر لم يُرحَّل.
+        </p>
+    </div>
+
+
+    <form method="post" asp-page-handler="CaptureAll" style="margin:0;">
+        <button type="submit" class="btn btn-secondary">التقاط الفروع من المستندات</button>
+    </form>
+</div>
+
+@if (Model.CustomerStatus is { NeedsSync: true } sync)
+{
+    <div class="alert alert-warning" role="alert" style="margin-bottom:var(--space-4);">
+        <strong>لا كشف عملاء لقاعدة <span class="mono">@sync.Source</span> بعد.</strong>
+        <p style="margin:var(--space-2) 0 0;font-size:var(--text-sm);">
+            الأسماء تُؤخذ من القاعدة المتصل بها وحدها، ولا تُعرض أسماء من قاعدةٍ أخرى:
+            اسمٌ غير موجود هناك يُرفض عند الترحيل، أو — أسوأ — يُنشئ الأوردر على عميلٍ غير المقصود.
+            @if (sync.SheetIgnored)
+            {
+                <text> (عندنا @sync.SheetCount اسماً من كشفٍ مرفوع، لكنها ليست لهذه القاعدة فلا تُعرض.)</text>
+            }
+        </p>
+        <p style="margin:var(--space-2) 0 0;font-size:var(--text-sm);">
+            زامِن الكشف من أودو أولاً.
+        </p>
+    </div>
+}
+
+<div class="card" style="padding:var(--space-4);margin-bottom:var(--space-5);">
+    <div style="display:flex;gap:var(--space-3);align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:260px;">
+            <h2 style="margin:0 0 var(--space-2);font-size:var(--text-lg);">فحص الربطات كلها</h2>
+            <p class="t-body-sm muted" style="margin:0;">
+                يسأل <span class="mono">@Model.CustomerSource</span> عن كل اسم عميل وكل قائمة أسعار
+                في الجدول دفعةً واحدة. اعمله بعد كل انتقال إلى أودو آخر — الأسماء كُتبت لأودو غيره،
+                ولا يُعرف أيّها بقي صالحاً إلا بالسؤال.
+            </p>
+            @if (Model.MappingsElsewhere > 0)
+            {
+                <p class="t-body-sm muted" style="margin:var(--space-2) 0 0;">
+                    وعندنا @Model.MappingsElsewhere ربطاً محفوظاً لقواعد أودو أخرى — كلٌّ يظهر
+                    في قاعدته وحدها، فلا تختلط ربطات عميلٍ بعميل.
+                </p>
+            }
+        </div>
+        <form method="post" asp-page-handler="Audit" style="margin:0;"
+              onsubmit="this.querySelector('button').disabled = true;
+                        this.querySelector('button').textContent = 'جارٍ الفحص…';">
+            <button type="submit" class="btn btn-secondary">افحص الآن</button>
+        </form>
+    </div>
+
+    @if (Model.Audit is { } audit && audit.Error is null && audit.Total > 0)
+    {
+        <div style="margin-top:var(--space-4);">
+            <p style="margin:0 0 var(--space-3);">
+                <strong>@audit.Total ربط</strong> على <span class="mono">@audit.Database</span> —
+                سليم @audit.Healthy ·
+                <span style="color:var(--color-error,#b00);">مكسور @audit.Broken</span> ·
+                ناقص @audit.Incomplete ·
+                قائمة فارغة @audit.EmptyPricelist
+            </p>
+
+            @if (audit.ReadyToSwitch)
+            {
+                <div class="alert alert-success" style="margin-bottom:var(--space-3);">
+                    كل الربطات المكتملة موجودة في هذه القاعدة.
+                </div>
+            }
+
+            <div style="overflow-x:auto;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>الفرع كما في المستند</th>
+                            <th>عميل أودو</th>
+                            <th>قائمة الأسعار</th>
+                            <th>الحال</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var check in audit.Checks.OrderByDescending(c => c.Broken)
+                                                           .ThenByDescending(c => c.Incomplete)
+                                                           .ThenByDescending(c => c.PricelistEmpty))
+                        {
+                            <tr>
+                                <td style="max-width:280px;">@check.Mapping.SourceLabel</td>
+                                <td class="mono" style="max-width:260px;">
+                                    @(check.Mapping.OdooCustomer ?? "—")
+                                    @if (check.NearestName is { } near)
+                                    {
+                                        <div class="muted" style="font-size:var(--text-sm);">
+                                            الأقرب في القاعدة: @near
+                                        </div>
+                                    }
+                                </td>
+                                <td class="mono">
+                                    @(check.Mapping.OdooPricelist ?? "—")
+                                    @if (check.PricelistNamed && check.PricelistFound)
+                                    {
+                                        <span class="muted">(@check.PricelistItems بند)</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (check.Incomplete)
+                                    {
+                                        <span class="badge badge-muted">ناقص — لم يُربط بعد</span>
+                                    }
+                                    else if (!check.CustomerFound)
+                                    {
+                                        <span class="badge badge-error">العميل غير موجود هنا</span>
+                                    }
+                                    else if (check.PricelistNamed && !check.PricelistFound)
+                                    {
+                                        <span class="badge badge-error">قائمة الأسعار غير موجودة</span>
+                                    }
+                                    else if (check.PricelistEmpty)
+                                    {
+                                        <span class="badge badge-warning">القائمة فارغة — سعر عام</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-success">سليم</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="muted" style="margin:var(--space-3) 0 0;font-size:var(--text-sm);">
+                فُحص في @audit.RunAt.ToString("yyyy-MM-dd HH:mm").
+            </p>
+        </div>
+    }
+</div>
+
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")" role="status"
+         style="margin-bottom:var(--space-5);">
+        @Model.Feedback
+    </div>
+}
+
+@* ── كشف عملاء أودو ───────────────────────────────────────────────── *@
+<div class="card" style="margin-bottom:var(--space-5);">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;">
+        <div>
+            <h2 class="t-h5" style="margin:0 0 var(--space-1);">كشف عملاء أودو</h2>
+            <p class="t-body-sm muted" style="margin:0;max-width:66ch;">
+                الاسم يُختار من كشف أودو ولا يُكتب باليد: عمود <code>Customer</code> يُطابَق
+                بالنص الحرفي، وحرفٌ زائد يجعل الاستيراد يُرفض — أو يُقبل وينسب الأوردر
+                إلى فرعٍ آخر.
+            </p>
+        </div>
+
+        @if (Model.Customers.Count > 0)
+        {
+            @* المصدر يُعرض دائماً: الاسم الصحيح في قاعدةٍ خطأٌ في أخرى، ولا
+               يُعرف ذلك من الاسم وحده. *@
+            <span class="badge badge-success" title="مصدر الأسماء">
+                @Model.Customers.Count عميل من
+                <span class="mono">&nbsp;@(Model.CustomerSource == "sheet" ? "كشف مرفوع" : Model.CustomerSource)</span>
+            </span>
+        }
+        else
+        {
+            <span class="badge badge-warning">لا توجد أسماء بعد</span>
+        }
+    </div>
+
+    @* القاعدة المتصل بها ليست بالضرورة القاعدة التي سيُستورد إليها الملف،
+       وقد قِيس أن قاعدتهم الاختبارية ليست نسخةً من الإنتاج. الخلط بينهما
+       يُنتج ملفاً بأسماء لا وجود لها حيث سيُستورد. *@
+    @if (Model.CanSyncFromOdoo
+         && Model.Customers.Count > 0
+         && Model.CustomerSource != Model.ConfiguredDatabase)
+    {
+        <div class="alert alert-warning" role="status" style="margin-top:var(--space-4);flex-direction:column;gap:var(--space-1);">
+            <strong>الأسماء المعروضة ليست من القاعدة المتصل بها.</strong>
+            <span>
+                المعروض من <span class="mono">@(Model.CustomerSource == "sheet" ? "كشف مرفوع" : Model.CustomerSource)</span>،
+                والاتصال على <span class="mono">@Model.ConfiguredDatabase</span>.
+                قاعدة الاختبار ليست نسخةً من الإنتاج، فتأكد أن هذه الأسماء موجودة
+                فعلاً في القاعدة التي ستستورد إليها الملف.
+            </span>
+        </div>
+    }
+
+    @if (Model.CanSyncFromOdoo)
+    {
+        @* السحب المباشر هو الطريق الصحيح: الاسم المعروض يأتي كما يبنيه أودو
+           نفسه، فلا بادئةَ تُستنتج ولا تُكتب بيد. *@
+        <form method="post" asp-page-handler="SyncOdoo" class="row"
+              style="margin-top:var(--space-4);align-items:center;">
+            <button type="submit" class="btn">
+                اسحب العملاء من <span class="mono">&nbsp;@Model.ConfiguredDatabase</span>
+            </button>
+            <span class="t-caption muted">
+                قراءة فقط — لا يُنشأ في أودو شيء ولا يُعدَّل. المسحوب لا يُعطّل
+                أسماء مصدرٍ آخر.
+            </span>
+        </form>
+    }
+
+    <details style="margin-top:var(--space-4);">
+        <summary class="t-body-sm" style="cursor:pointer;color:var(--color-text-link);">
+            @(Model.CanSyncFromOdoo ? "أو ارفع كشفاً مصدَّراً يدوياً" : "ارفع كشفاً مصدَّراً من أودو")
+        </summary>
+
+        <form method="post" asp-page-handler="ImportCustomers" enctype="multipart/form-data"
+              class="row" style="margin-top:var(--space-3);align-items:flex-end;">
+            <div class="field" style="flex:1 1 260px;">
+                <label class="t-label" for="CustomerSheet">
+                    ملف <code>Contact (res.partner)</code> بصيغة xlsx
+                </label>
+                <input class="input" type="file" id="CustomerSheet" name="CustomerSheet" accept=".xlsx,.xlsm" />
+            </div>
+            <button type="submit" class="btn btn-secondary">
+                @(Model.Customers.Count > 0 ? "حدّث من الملف" : "ارفع الملف")
+            </button>
+        </form>
+
+        <p class="t-caption muted" style="margin:var(--space-2) 0 0;">
+            صدّره ومعه حقل <strong>Display Name</strong> — أو <strong>Related Company</strong>
+            بجانب <strong>Name</strong> — وإلا نقصت الأسماء بادئة الشركة الأم.
+        </p>
+    </details>
+
+    @if (Model.CustomersImportedOn is { } imported)
+    {
+        <p class="t-caption muted" style="margin:var(--space-3) 0 0;">
+            آخر تحديث <span class="mono">@imported.ToString("yyyy-MM-dd HH:mm")</span> ·
+            من غاب عن الكشف يُعطَّل ولا يُمحى، فالربط القائم عليه يبقى مقروءاً.
+        </p>
+    }
+
+    @* الكشف بلا شركة أم يعطي أسماء لا يقبلها الاستيراد. يُقال قبل توليد
+       الملف، لا بعد أن يرفضه أودو. *@
+    @if (Model.Customers.Count > 0 && !Model.CustomersHaveDisplayNames)
+    {
+        <div class="alert alert-warning" role="status" style="margin-top:var(--space-4);flex-direction:column;gap:var(--space-2);">
+            <strong>الكشف ناقصٌ عمود الشركة الأم.</strong>
+            <span>
+                أودو يعرض الفرع مسبوقاً بشركته:
+                <code class="mono">Talabat, Talabat&nbsp;&nbsp;Al agooza DS-7</code> —
+                والكشف المرفوع فيه <code class="mono">Talabat&nbsp;&nbsp;Al agooza DS-7</code> وحده،
+                وهو ما لا يطابق شيئاً عند الاستيراد.
+            </span>
+            <span>
+                صدّره ثانيةً من أودو ومعه حقل <strong>Display Name</strong> — أو
+                <strong>Related Company</strong> بجانب <strong>Name</strong> — ثم ارفعه هنا.
+                إلى أن يحدث ذلك يمكنك كتابة البادئة بيدك، ويتحقق النظام من جزء الفرع وحده.
+            </span>
+        </div>
+    }
+</div>
+
+@* قائمة الأسماء تُكتب مرة وتخدم كل حقول العميل في الصفحة. *@
+<datalist id="odoo-customers">
+    @foreach (var customer in Model.Customers)
+    {
+        <option value="@customer.DisplayName"></option>
+    }
+</datalist>
+
+@if (Model.Pending.Count > 0)
+{
+    <div class="card" style="border-color:var(--color-warning-border);background:var(--color-warning-surface);
+                             margin-bottom:var(--space-5);">
+        <h2 class="t-h5" style="margin:0 0 var(--space-2);color:var(--color-warning);">
+            فروع التقطها النظام وينقصها اسم العميل في أودو (@Model.Pending.Count)
+        </h2>
+        <p class="t-body-sm" style="margin:0 0 var(--space-3);color:var(--color-warning);">
+            هذه فروع وردت في مستندات ولم تكن معروفة. النظام سجّلها ولم يخترع لها اسماً —
+            أكمل الاسم مرة واحدة ويُستعمل بعدها دائماً.
+        </p>
+
+        <div class="stack" style="gap:var(--space-2);">
+            @foreach (var map in Model.Pending)
+            {
+                <div class="row" style="justify-content:space-between;gap:var(--space-3);
+                                        background:var(--color-surface);border-radius:var(--radius-md);
+                                        padding:var(--space-2) var(--space-3);flex-wrap:nowrap;">
+                    <span class="t-body-sm" style="min-width:0;overflow:hidden;text-overflow:ellipsis;
+                                                   white-space:nowrap;" title="@map.SourceLabel">
+                        @map.SourceLabel
+                    </span>
+
+                    <span class="row" style="gap:var(--space-2);flex-wrap:nowrap;flex-shrink:0;">
+                        @if (Model.Suggestions.TryGetValue(map.Id, out var suggestion))
+                        {
+                            @* الاقتراح يُعرض ومعه سببه: اقتراحٌ بلا سببٍ يُقبل بلا مراجعة. *@
+                            <span class="badge badge-info" title="@suggestion.Reason">
+                                مقترح: @suggestion.Customer.DisplayName
+                            </span>
+                        }
+                        <a class="btn btn-secondary btn-sm" href="/Mappings?edit=@map.Id">أكمل الربط</a>
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<div class="card" style="margin-bottom:var(--space-5);">
+    <h2 class="t-h5" style="margin:0 0 var(--space-4);">
+        @(Model.Input.Id == 0 ? "ربط جديد" : $"تعديل الربط #{Model.Input.Id}")
+    </h2>
+
+    <form method="post" asp-page-handler="Save">
+        <input type="hidden" asp-for="Input.Id" />
+
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));">
+            <div class="field">
+                <label class="t-label" asp-for="Input.SourceLabel">نص الفرع كما في المستند</label>
+                <input class="input" type="text" asp-for="Input.SourceLabel" placeholder="EG_Shrouk (3)_DS_73" />
+                <span class="field-error" asp-validation-for="Input.SourceLabel"></span>
+            </div>
+
+            <div class="field">
+                <label class="t-label" asp-for="Input.OdooCustomer">Customer في أودو</label>
+                <input class="input" type="text" asp-for="Input.OdooCustomer"
+                       list="odoo-customers" autocomplete="off" spellcheck="false"
+                       placeholder="@(Model.Customers.Count > 0 ? "اكتب حرفين للبحث في الكشف" : "ارفع كشف العملاء أولاً")" />
+                <span class="field-error" asp-validation-for="Input.OdooCustomer"></span>
+
+                @if (Model.Input.Id != 0
+                     && Model.Suggestions.TryGetValue(Model.Input.Id, out var editSuggestion))
+                {
+                    <span class="t-caption" style="color:var(--color-info);">
+                        @editSuggestion.Reason — راجعه قبل الحفظ.
+                    </span>
+                }
+                else if (Model.Customers.Count == 0)
+                {
+                    <span class="t-caption muted">
+                        بلا كشفٍ لا يمكن التحقق من الاسم، فيُقبل كما يُكتب.
+                    </span>
+                }
+            </div>
+
+            <div class="field">
+                <label class="t-label" asp-for="Input.OdooPricelist">Pricelist</label>
+                <input class="input" type="text" asp-for="Input.OdooPricelist" placeholder="Talabat" />
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.OdooInvoiceAddress">Invoice Address (اختياري)</label>
+                <input class="input" type="text" asp-for="Input.OdooInvoiceAddress"
+                       list="odoo-customers" autocomplete="off" placeholder="نفس العميل إن تُرك فارغاً" />
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.OdooDeliveryAddress">Delivery Address (اختياري)</label>
+                <input class="input" type="text" asp-for="Input.OdooDeliveryAddress"
+                       list="odoo-customers" autocomplete="off" placeholder="نفس العميل إن تُرك فارغاً" />
+            </div>
+            <div class="field">
+                <label class="t-label" asp-for="Input.Note">ملاحظة</label>
+                <input class="input" type="text" asp-for="Input.Note" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-top:var(--space-4);">
+            <button type="submit" class="btn">حفظ</button>
+            @if (Model.Input.Id != 0)
+            {
+                <a class="btn btn-tertiary" href="/Mappings">إلغاء</a>
+            }
+            <label class="check" style="margin-inline-start:var(--space-2);">
+                <input type="checkbox" asp-for="Input.IsActive" />
+                <span class="t-body-sm">مفعّل</span>
+            </label>
+        </div>
+    </form>
+</div>
+
+@if (Model.Complete.Count == 0)
+{
+    <div class="empty">
+        <p class="t-body">لا توجد روابط مكتملة بعد.</p>
+    </div>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>الفرع في المستند</th>
+                    <th>Customer في أودو</th>
+                    <th>Pricelist</th>
+                    <th>ملاحظة</th>
+                    <th><span class="sr-only">إجراء</span></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var map in Model.Complete)
+            {
+                <tr style="@(map.IsActive ? "" : "opacity:.5;")">
+                    <td>
+                        @map.SourceLabel
+                        <span class="raw">@map.MatchKey</span>
+                    </td>
+                    <td>
+                        @map.OdooCustomer
+                        @if (map.AutoCaptured)
+                        {
+                            <span class="raw">التُقط تلقائياً</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(map.OdooDeliveryAddress))
+                        {
+                            <span class="raw">تسليم: @map.OdooDeliveryAddress</span>
+                        }
+                    </td>
+                    <td>@(map.OdooPricelist ?? "—")</td>
+                    <td style="white-space:normal;max-width:32ch;">@(map.Note ?? "—")</td>
+                    <td>
+                        <div class="row" style="gap:var(--space-2);flex-wrap:nowrap;">
+                            <a class="link-btn" href="/Mappings?edit=@map.Id">تعديل</a>
+                            <form method="post" asp-page-handler="Delete" asp-route-id="@map.Id"
+                                  style="margin:0;" onsubmit="return confirm('إزالة هذا الربط؟');">
+                                <button type="submit" class="btn btn-tertiary btn-sm">إزالة</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

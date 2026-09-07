@@ -1,0 +1,294 @@
+﻿@page
+@model YelgLens.Intake.PL.Pages.IndexModel
+@inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
+@{
+    ViewData["Title"] = "رفع مستند";
+    Layout = "Shared/_Layout";
+    var canReview = (await AuthorizationService.AuthorizeAsync(User, YelgLens.Intake.Model.Auth.PermissionCodes.DocumentReview)).Succeeded;
+}
+
+<style>
+    /* اسم العميل أول ما تقع عليه العين في هذه الشاشة: الورقة تُنسب إليه،
+       ومندوبٌ يخدم عميلين قد يصوّر لأحدهما وهو يظنّ الآخر. */
+    .upload-client {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md, 8px);
+        padding: var(--space-3);
+        margin-bottom: var(--space-4);
+        background: var(--color-surface-raised, transparent);
+    }
+
+    .upload-client > label {
+        display: block;
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+        margin-bottom: var(--space-2);
+    }
+
+    .upload-client-name {
+        margin: 0;
+        font-size: var(--text-lg);
+        font-weight: 600;
+    }
+
+    .upload-client select { width: 100%; font-size: var(--text-base); }
+
+    .upload-client-hint {
+        margin: var(--space-2) 0 0;
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+    }
+</style>
+
+<div class="page-head">
+    <div>
+        <h1>رفع مستند</h1>
+        <p class="t-body-sm muted">
+            صوّر أمر الشراء أو إذن التسليم، أو ارفع ملف PDF أو Excel.
+            لو المستند أكثر من ورقة صوّرها كلها — تُحفظ مستنداً واحداً.
+        </p>
+    </div>
+</div>
+
+@if (Model.Rejected is { } rejected)
+{
+    <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-5);flex-direction:column;gap:var(--space-1);">
+        <span>
+            أنت تعيد رفع المستند <strong class="mono">#@rejected.Id</strong> بعد رفضه.
+            صوّره من جديد بما يعالج السبب:
+        </span>
+        <strong>@rejected.ReviewNote</strong>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-error" role="alert" style="margin-bottom:var(--space-5);">@Model.ErrorMessage</div>
+}
+
+@if (Model.StoredDocumentId is { } id)
+{
+    if (Model.WasDuplicate)
+    {
+        <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-5);">
+            هذه الورقة مرفوعة من قبل — المستند رقم <strong class="mono">&nbsp;@id</strong>.
+            لم يُنشأ مستند جديد حتى لا تتكرر الطلبية.
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-success" role="status" style="margin-bottom:var(--space-5);">
+            <span>
+                وصل المستند وحُفظ برقم <strong class="mono">&nbsp;@id&nbsp;</strong>
+                @if (Model.StoredPageCount > 1)
+                {
+                    <text> من @Model.StoredPageCount صفحات</text>
+                }
+                وهو الآن في قائمة المراجعة.
+                <a href="/MyDocuments">تابع حالته من «مستنداتي»</a>.
+                @if (Model.SavedBytes > 0)
+                {
+                    <text> (ضُغطت الصور فوُفّر @(Model.SavedBytes / 1024) ك.ب.)</text>
+                }
+            </span>
+        </div>
+    }
+}
+
+<div class="card" style="margin-bottom:var(--space-5);">
+    @if (Model.MyClients.Count > 1)
+    {
+        <form method="post" asp-page="/Settings/SwitchClient" id="client-switch"
+              style="display:none;"></form>
+    }
+
+    <form method="post" enctype="multipart/form-data" id="upload-form">
+        @if (Model.Replaces is { } replaces)
+        {
+            <input type="hidden" name="Replaces" value="@replaces" />
+        }
+
+        <input type="hidden" asp-for="ClientId" />
+
+        <div class="upload-client">
+            <label for="client-picker">العميل الذي تصوّر له</label>
+
+            @if (Model.MyClients.Count == 0)
+            {
+                <p class="alert alert-error" style="margin:0;">
+                    لست مُسنَداً إلى أي عميل. راجع مسؤول النظام قبل الرفع.
+                </p>
+            }
+            else if (Model.MyClients.Count == 1)
+            {
+                <p class="upload-client-name">@Model.CurrentClient?.Display</p>
+            }
+            else
+            {
+                <select id="client-picker" class="input"
+                        onchange="document.getElementById('client-switch').submit();"
+                        form="client-switch" name="clientId">
+                    @foreach (var client in Model.MyClients)
+                    {
+                        <option value="@client.Id" selected="@(client.Id == Model.CurrentClient?.Id)">
+                            @client.Display
+                        </option>
+                    }
+                </select>
+            }
+
+            @if (Model.CurrentClient is not null && string.IsNullOrWhiteSpace(Model.CurrentDatabase))
+            {
+                <p class="alert alert-warning" style="margin:var(--space-2) 0 0;">
+                    هذا العميل بلا وصلة أودو مفعَّلة، فلا يُرفع له مستند بعد.
+                </p>
+            }
+            else if (Model.CurrentDatabase is { } database)
+            {
+                <p class="upload-client-hint">
+                    ستُحفظ الورقة عند هذا العميل وتُرحَّل إلى
+                    <span class="mono">@database</span> — لا إلى غيره.
+                </p>
+            }
+        </div>
+
+        <button type="button" class="capture" id="btn-camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+            </svg>
+            <span id="camera-label">التقط صورة المستند</span>
+        </button>
+
+        <button type="button" class="btn btn-tertiary btn-block" id="btn-file"
+                style="margin-top:var(--space-3);">
+            أو اختر ملفات من الجهاز
+        </button>
+
+        <input class="hidden" type="file" name="Uploads" id="input-send" multiple />
+        <input class="hidden" type="file" id="input-camera" accept="image/*" capture="environment" />
+        <input class="hidden" type="file" id="input-file" multiple
+               accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.webp,.xlsx,.xlsm,.xls" />
+
+        <div id="pages" style="margin-top:var(--space-4);"></div>
+        <p class="t-caption muted" id="hint" style="margin:var(--space-2) 0 0;">لم تُضف صفحات بعد.</p>
+
+        <button type="submit" class="btn btn-block" id="btn-send" disabled
+                data-blocked="@((!Model.CanUpload).ToString().ToLowerInvariant())"
+                style="margin-top:var(--space-4);">
+            @(Model.CanUpload ? "أرسل المستند" : "لا يمكن الرفع الآن")
+        </button>
+    </form>
+</div>
+
+<div class="note" style="background:var(--color-warning-surface);border-color:var(--color-warning-border);">
+    <h2 class="t-h5" style="margin:0 0 var(--space-2);color:var(--color-warning);">عشان القراءة تنجح من أول مرة</h2>
+    <ul class="t-body-sm" style="margin:0;padding-inline-start:var(--space-5);color:var(--color-warning);line-height:1.9;">
+        <li>قرّب الكاميرا حتى يملأ الجدول الشاشة — الصورة من بعيد لا تُقرأ.</li>
+        <li>صوّر رأس الورقة والباركود من قريب في لقطة، والجدول في لقطة أخرى.</li>
+        <li>تجنّب الظل على الورقة، وثبّت يدك حتى لا تهتزّ الصورة.</li>
+        <li>ملف PDF أو Excel أدقّ من الصورة دائماً — لو متاح فارفعه بدلاً منها.</li>
+    </ul>
+</div>
+
+<p style="margin-top:var(--space-5);">
+    @if (canReview)
+    {
+        <a class="link-btn" href="/Documents">قائمة المراجعة</a>
+    }
+    else
+    {
+        <a class="link-btn" href="/MyDocuments">مستنداتي وحالتها</a>
+    }
+</p>
+
+@section Scripts {
+<script>
+    (function () {
+        var camera = document.getElementById('input-camera');
+        var picker = document.getElementById('input-file');
+        var send = document.getElementById('input-send');
+        var list = document.getElementById('pages');
+        var hint = document.getElementById('hint');
+        var button = document.getElementById('btn-send');
+        var label = document.getElementById('camera-label');
+
+        // الصفحات تتراكم: كل لقطة تُضاف إلى ما قبلها بدل أن تحل محله، لأن
+        // الكاميرا على الهاتف تعيد لقطة واحدة في كل مرة.
+        var pages = [];
+
+        function render() {
+            list.innerHTML = '';
+
+            pages.forEach(function (file, index) {
+                var row = document.createElement('div');
+                row.className = 'page-row';
+
+                var n = document.createElement('span');
+                n.className = 'n';
+                n.textContent = String(index + 1);
+
+                var name = document.createElement('span');
+                name.className = 'nm';
+                name.textContent = file.name;
+
+                var size = document.createElement('span');
+                size.className = 'sz';
+                size.textContent = (file.size / 1048576).toFixed(1) + ' م.ب';
+
+                var drop = document.createElement('button');
+                drop.type = 'button';
+                drop.className = 'btn btn-tertiary btn-sm';
+                drop.textContent = '×';
+                drop.title = 'أزل هذه الصفحة';
+                drop.addEventListener('click', function () {
+                    pages.splice(index, 1);
+                    render();
+                });
+
+                row.append(n, name, size, drop);
+                list.appendChild(row);
+            });
+
+            var transfer = new DataTransfer();
+            pages.forEach(function (f) { transfer.items.add(f); });
+            send.files = transfer.files;
+
+            // ويبقى مقفولاً حين لا عميل أو لا وصلة: الصفحات جاهزةٌ والوجهة
+            // ليست، ورفعُها حينئذٍ يفشل بعد الانتظار لا قبله.
+            button.disabled = pages.length === 0 || button.dataset.blocked === 'true';
+            hint.textContent = pages.length === 0
+                ? 'لم تُضف صفحات بعد.'
+                : pages.length + ' صفحة — تُحفظ مستنداً واحداً.';
+            label.textContent = pages.length === 0 ? 'التقط صورة المستند' : 'التقط صفحة أخرى';
+        }
+
+        function add(files) {
+            for (var i = 0; i < files.length; i++) pages.push(files[i]);
+            render();
+        }
+
+        document.getElementById('btn-camera').addEventListener('click', function () { camera.click(); });
+        document.getElementById('btn-file').addEventListener('click', function () { picker.click(); });
+
+        camera.addEventListener('change', function () {
+            add(camera.files);
+            camera.value = '';
+        });
+
+        picker.addEventListener('change', function () {
+            add(picker.files);
+            picker.value = '';
+        });
+
+        // الرفع من الميدان بطيء، فيُمنع الضغط مرتين ويُطمأن المستخدم أن شيئاً يجري.
+        document.getElementById('upload-form').addEventListener('submit', function () {
+            button.disabled = true;
+            button.textContent = 'جارٍ الإرسال…';
+        });
+
+        render();
+    })();
+</script>
+}

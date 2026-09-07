@@ -1,0 +1,255 @@
+﻿@page
+@model YelgLens.Intake.PL.Pages.Settings.OdooModel
+@{
+    ViewData["Title"] = "إعدادات أودو";
+    var editing = Model.Input.Id > 0;
+}
+
+<div class="page-head">
+    <h1>إعدادات أودو</h1>
+    <p class="muted">
+        احفظ أكثر من وصل — اختبارٌ وإنتاج — وفعّل واحداً. التبديل يسري فوراً
+        بلا إعادة تشغيل، ويُرجع عنه بضغطة.
+    </p>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")"
+         style="margin-bottom:var(--space-4);">@Model.Feedback</div>
+}
+
+<div class="card" style="margin-bottom:var(--space-5);padding:var(--space-4);">
+    <h2 style="margin:0 0 var(--space-3);font-size:var(--text-lg);">المعمول به الآن</h2>
+
+    @if (Model.Effective.IsConfigured)
+    {
+        <p style="margin:0;">
+            <span class="mono">@Model.Effective.Describe()</span>
+            <span class="badge @(Model.Effective.AllowWrites ? "badge-warning" : "badge-muted")"
+                  style="margin-inline-start:var(--space-2);">
+                @(Model.Effective.AllowWrites ? "الكتابة مفتوحة" : "قراءة فقط")
+            </span>
+        </p>
+        <p class="muted" style="margin:var(--space-2) 0 0;font-size:var(--text-sm);">
+            رفع الأصل على الأوردر: @(Model.Effective.AttachSourceOnPublish ? "يعمل" : "مقفول") ·
+            حذف نسختنا بعد الرفع: @(Model.Effective.DeleteLocalAfterAttach ? "يعمل" : "مقفول") ·
+            مهلة النداء: @Model.Effective.TimeoutSeconds ثانية
+
+            @if (Model.FromFile)
+            {
+                <text> — مقروءة من ملف الإعدادات، فلا وصل مفعَّل هنا بعد.</text>
+            }
+        </p>
+    }
+    else
+    {
+        <p style="margin:0;">لا اتصال مضبوط. احفظ وصلاً وفعّله.</p>
+    }
+</div>
+
+<h2 style="font-size:var(--text-lg);margin:0 0 var(--space-3);">الأوصال المحفوظة</h2>
+
+@if (Model.Connections.Count == 0)
+{
+    <p class="muted" style="margin-bottom:var(--space-5);">لا وصل محفوظ بعد.</p>
+}
+else
+{
+    <div class="table-wrap" style="overflow-x:auto;margin-bottom:var(--space-5);">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>الاسم</th>
+                    <th>القاعدة</th>
+                    <th>المستخدم</th>
+                    <th>الكتابة</th>
+                    <th>المفتاح</th>
+                    <th>آخر تجربة</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var connection in Model.Connections)
+                {
+                    <tr>
+                        <td>
+                            <strong>@connection.Name</strong>
+                            @if (connection.IsActive)
+                            {
+                                <span class="badge badge-success" style="margin-inline-start:var(--space-2);">مفعَّل</span>
+                            }
+                            @if (connection.IsProduction)
+                            {
+                                <span class="badge badge-error" style="margin-inline-start:var(--space-2);">إنتاج</span>
+                            }
+                        </td>
+                        <td class="mono">@connection.Database</td>
+                        <td class="mono">@connection.ServiceUser</td>
+                        <td style="white-space:nowrap;">
+                            @if (connection.AllowWrites)
+                            {
+                                <span class="badge badge-warning">مفتوحة</span>
+                                <form method="post" asp-page-handler="ToggleWrites"
+                                      asp-route-id="@connection.Id" asp-route-allow="false"
+                                      style="display:inline;margin-inline-start:var(--space-2);">
+                                    <button type="submit" class="btn btn-tertiary btn-sm">اقفلها</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <span class="badge badge-muted">مقفولة</span>
+                                <form method="post" asp-page-handler="ToggleWrites"
+                                      asp-route-id="@connection.Id" asp-route-allow="true"
+                                      style="display:inline;margin-inline-start:var(--space-2);"
+                                      onsubmit="return confirm('فتح الكتابة على @connection.Database؟ سيصير النظام قادراً على إنشاء أوردرات فيها.');">
+                                    <button type="submit" class="btn btn-secondary btn-sm">افتحها</button>
+                                </form>
+                            }
+                        </td>
+                        <td>@(connection.HasKey ? "محفوظ" : "—")</td>
+                        <td style="font-size:var(--text-sm);">
+                            @if (connection.LastTestedDate is { } tested)
+                            {
+                                <span>@tested.ToString("yyyy-MM-dd HH:mm")</span>
+                                <div class="muted">@connection.LastTestResult</div>
+                            }
+                            else
+                            {
+                                <span class="muted">لم تُجرَّب</span>
+                            }
+                        </td>
+                        <td style="white-space:nowrap;">
+                            <a class="btn btn-tertiary btn-sm" asp-page="/Settings/Odoo"
+                               asp-route-edit="@connection.Id">عدّل</a>
+
+                            <form method="post" asp-page-handler="Test" asp-route-id="@connection.Id"
+                                  style="display:inline;">
+                                <button type="submit" class="btn btn-tertiary btn-sm">جرّب</button>
+                            </form>
+
+                            @if (!connection.IsActive)
+                            {
+                                <form method="post" asp-page-handler="Activate" asp-route-id="@connection.Id"
+                                      style="display:inline;"
+                                      onsubmit="return @(connection.IsProduction ? "true" : "confirm('تفعيل هذا الوصل؟')");">
+                                    @if (connection.IsProduction)
+                                    {
+                                        <input type="text" name="confirm" class="input" required
+                                               placeholder="اكتب @connection.Database"
+                                               style="width:130px;display:inline-block;" />
+                                    }
+                                    <button type="submit" class="btn btn-secondary btn-sm">فعّله</button>
+                                </form>
+
+                                <form method="post" asp-page-handler="Remove" asp-route-id="@connection.Id"
+                                      style="display:inline;"
+                                      onsubmit="return confirm('حذف هذا الوصل؟');">
+                                    <button type="submit" class="btn btn-tertiary btn-sm">احذف</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<div class="card" style="padding:var(--space-4);">
+    <h2 style="margin:0 0 var(--space-3);font-size:var(--text-lg);">
+        @(editing ? $"تعديل «{Model.Input.Name}»" : "وصل جديد")
+    </h2>
+
+    <form method="post" asp-page-handler="Save">
+        <input type="hidden" asp-for="Input.Id" />
+
+        <div class="form-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-3);">
+            <label>
+                <span>الاسم</span>
+                <input asp-for="Input.Name" class="input" required maxlength="80" placeholder="اختبار / إنتاج" />
+            </label>
+
+            <label>
+                <span>عنوان الخادم</span>
+                <input asp-for="Input.Url" class="input" required maxlength="300"
+                       placeholder="https://phoenix.nexterabd.com" />
+            </label>
+
+            <label>
+                <span>اسم القاعدة</span>
+                <input asp-for="Input.Database" class="input mono" required maxlength="100"
+                       placeholder="phoenix_test" />
+            </label>
+
+            <label>
+                <span>مستخدم الخدمة</span>
+                <input asp-for="Input.ServiceUser" class="input" required maxlength="150" />
+            </label>
+
+            <label>
+                <span>مفتاح الوصول</span>
+                <input asp-for="Input.ApiKey" class="input mono" type="password" autocomplete="new-password"
+                       placeholder="@(editing ? "اتركه فارغاً ليبقى المحفوظ" : "المفتاح من أودو")" />
+                <small class="muted">
+                    يُحفظ معمّى ولا يُعرض بعدها. من نسيه يكتب غيره.
+                </small>
+            </label>
+
+            <label>
+                <span>مهلة النداء (ثانية)</span>
+                <input asp-for="Input.TimeoutSeconds" class="input" type="number" min="10" max="600" />
+            </label>
+        </div>
+
+        <div style="margin-top:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);">
+            <label style="display:flex;gap:var(--space-2);align-items:flex-start;">
+                <input asp-for="Input.IsProduction" type="checkbox" />
+                <span>
+                    <strong>هذه قاعدة إنتاج</strong>
+                    <small class="muted" style="display:block;">
+                        وسمها هنا يجعل تفعيلها يطلب كتابة اسم القاعدة، ويظهر تنبيهاً دائماً.
+                    </small>
+                </span>
+            </label>
+
+            <label style="display:flex;gap:var(--space-2);align-items:flex-start;">
+                <input asp-for="Input.AllowWrites" type="checkbox" />
+                <span>
+                    <strong>اسمح بالكتابة في أودو</strong>
+                    <small class="muted" style="display:block;">
+                        بدونها يقرأ النظام ولا يُنشئ أوردرات. اتركها مقفولة حتى تنجح التجربة.
+                    </small>
+                </span>
+            </label>
+
+            <label style="display:flex;gap:var(--space-2);align-items:flex-start;">
+                <input asp-for="Input.AttachSourceOnPublish" type="checkbox" />
+                <span>ارفع أصل المستند على الأوردر بعد الترحيل</span>
+            </label>
+
+            <label style="display:flex;gap:var(--space-2);align-items:flex-start;">
+                <input asp-for="Input.DeleteLocalAfterAttach" type="checkbox" />
+                <span>
+                    احذف نسختنا بعد التأكد من وصولها
+                    <small class="muted" style="display:block;">
+                        لا يعمل بغير الرفع. الحذف لا رجعة فيه، وبعده تصير نسخة أودو هي الوحيدة.
+                    </small>
+                </span>
+            </label>
+
+            <label>
+                <span>ملاحظة</span>
+                <input asp-for="Input.Note" class="input" maxlength="400" />
+            </label>
+        </div>
+
+        <div style="margin-top:var(--space-4);display:flex;gap:var(--space-2);">
+            <button type="submit" class="btn">@(editing ? "احفظ التعديل" : "احفظ الوصل")</button>
+            @if (editing)
+            {
+                <a class="btn btn-tertiary" asp-page="/Settings/Odoo">وصل جديد</a>
+            }
+        </div>
+    </form>
+</div>

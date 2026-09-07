@@ -1,0 +1,219 @@
+@page
+@model YelgLens.Intake.PL.Pages.Settings.ClientsModel
+@{
+    ViewData["Title"] = "العملاء";
+    var opened = Model.Opened;
+}
+
+<div class="page-head">
+    <div>
+        <h1>عملاؤنا</h1>
+        <p class="t-body-sm muted">
+            كل عميلٍ له أودو خاص بعملائه هو، ومستنداته وربطاته ومستخدموه له وحده.
+            ومن لا يُسنَد إلى عميلٍ لا يرى شيئاً.
+        </p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")"
+         style="margin-bottom:var(--space-4);">@Model.Feedback</div>
+}
+
+@if (Model.Items.Count == 0)
+{
+    <div class="alert alert-warning" style="margin-bottom:var(--space-4);">
+        لا عملاء بعد. أضف الأول من النموذج أسفل الصفحة، ثم اضبط له وصلة أودو.
+    </div>
+}
+else
+{
+    <div class="table-wrap" style="overflow-x:auto;margin-bottom:var(--space-5);">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>العميل</th>
+                    <th>أودو المعمول به</th>
+                    <th class="num">مستخدمون</th>
+                    <th class="num">مستندات</th>
+                    <th class="num">ربطات</th>
+                    <th class="num">عملاؤه</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model.Items)
+                {
+                    <tr>
+                        <td>
+                            <strong>@item.Client.Display</strong>
+                            @if (Model.CurrentClientId == item.Client.Id)
+                            {
+                                <span class="badge badge-success" style="margin-inline-start:var(--space-2);">تعمل عليه</span>
+                            }
+                            @if (!item.Client.IsActive)
+                            {
+                                <span class="badge badge-muted" style="margin-inline-start:var(--space-2);">معطَّل</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.Client.ContactName))
+                            {
+                                <div class="muted" style="font-size:var(--text-sm);">@item.Client.ContactName</div>
+                            }
+                        </td>
+                        <td>
+                            @if (item.Active is { } active)
+                            {
+                                <span class="mono">@active.Database</span>
+                                @if (active.IsProduction)
+                                {
+                                    <span class="badge badge-error" style="margin-inline-start:var(--space-2);">إنتاج</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="muted">لا وصلة مفعَّلة (@item.Connections محفوظة)</span>
+                            }
+                        </td>
+                        <td class="num">@item.Users</td>
+                        <td class="num">@item.Documents</td>
+                        <td class="num">@item.Mappings</td>
+                        <td class="num">@item.Customers</td>
+                        <td style="white-space:nowrap;">
+                            <a class="btn btn-tertiary btn-sm" asp-page="/Settings/Clients"
+                               asp-route-open="@item.Client.Id">افتح</a>
+
+                            @if (Model.CurrentClientId != item.Client.Id && item.Client.IsActive)
+                            {
+                                <form method="post" asp-page-handler="Switch" asp-route-id="@item.Client.Id"
+                                      style="display:inline;">
+                                    <button type="submit" class="btn btn-secondary btn-sm">اعمل عليه</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (opened is not null)
+{
+    <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-5);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap;">
+            <h2 style="margin:0;font-size:var(--text-lg);">@opened.Client.Display</h2>
+
+            <div style="display:flex;gap:var(--space-2);">
+                @if (Model.CurrentClientId == opened.Client.Id)
+                {
+                    <a class="btn btn-tertiary btn-sm" href="/Settings/Odoo">أوصال أودو</a>
+                }
+                <form method="post" asp-page-handler="SetActive" asp-route-id="@opened.Client.Id"
+                      asp-route-active="@(!opened.Client.IsActive)" style="margin:0;"
+                      onsubmit="return confirm('@(opened.Client.IsActive ? "تعطيل هذا العميل؟ بياناته تبقى كما هي." : "إعادة تفعيله؟")');">
+                    <button type="submit" class="btn btn-tertiary btn-sm">
+                        @(opened.Client.IsActive ? "عطّله" : "فعّله")
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <p class="muted" style="margin:var(--space-2) 0 var(--space-4);font-size:var(--text-sm);">
+            @opened.Documents مستند · @opened.Mappings ربط فرع · @opened.Customers عميل في كشفه
+            @if (opened.Active is null)
+            {
+                <text> — ولا وصلة أودو مفعَّلة، فلا يُعمل عليه بعد.</text>
+            }
+        </p>
+
+        <h3 style="font-size:var(--text-base);margin:0 0 var(--space-2);">من يعمل عليه</h3>
+
+        @if (Model.Assigned.Count == 0)
+        {
+            <p class="muted" style="margin:0 0 var(--space-3);font-size:var(--text-sm);">
+                لا مستخدم مُسنَد. ومن لا إسناد له لا يرى مستندات هذا العميل.
+            </p>
+        }
+        else
+        {
+            <ul style="list-style:none;padding:0;margin:0 0 var(--space-3);display:flex;
+                       flex-wrap:wrap;gap:var(--space-2);">
+                @foreach (var user in Model.Assigned)
+                {
+                    <li style="display:flex;align-items:center;gap:var(--space-2);
+                               border:1px solid var(--color-border,#ddd);border-radius:var(--radius-md,6px);
+                               padding:var(--space-1) var(--space-2);">
+                        <span>@user.FullName</span>
+                        <span class="muted" style="font-size:var(--text-sm);">@user.Email</span>
+                        <form method="post" asp-page-handler="Unassign" asp-route-id="@opened.Client.Id"
+                              asp-route-userId="@user.Id" style="margin:0;"
+                              onsubmit="return confirm('سحب إسناد @user.FullName من هذا العميل؟');">
+                            <button type="submit" class="btn btn-ghost btn-sm" title="اسحب الإسناد">×</button>
+                        </form>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (Model.Unassigned.Count > 0)
+        {
+            <form method="post" asp-page-handler="Assign" asp-route-id="@opened.Client.Id"
+                  style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
+                <select name="userId" class="input" required style="min-width:240px;">
+                    <option value="">أسنِد مستخدماً…</option>
+                    @foreach (var user in Model.Unassigned)
+                    {
+                        <option value="@user.Id">@user.FullName — @user.Email</option>
+                    }
+                </select>
+                <button type="submit" class="btn btn-secondary btn-sm">أسنِده</button>
+            </form>
+        }
+    </div>
+}
+
+<div class="card" style="padding:var(--space-4);">
+    <h2 style="margin:0 0 var(--space-3);font-size:var(--text-lg);">
+        @(opened is not null ? "بيانات العميل" : "عميل جديد")
+    </h2>
+
+    <form method="post" asp-page-handler="Save">
+        <input type="hidden" asp-for="Input.Id" />
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-3);">
+            <label>
+                <span>اسم العميل</span>
+                <input asp-for="Input.Name" class="input" required maxlength="150" placeholder="فينيكس للتوزيع" />
+            </label>
+            <label>
+                <span>رمز مختصر</span>
+                <input asp-for="Input.Code" class="input mono" maxlength="30" placeholder="PHX" />
+            </label>
+            <label>
+                <span>مسؤول التواصل</span>
+                <input asp-for="Input.ContactName" class="input" maxlength="150" />
+            </label>
+            <label>
+                <span>بريده</span>
+                <input asp-for="Input.ContactEmail" class="input" type="email" maxlength="150" />
+            </label>
+            <label>
+                <span>هاتفه</span>
+                <input asp-for="Input.ContactPhone" class="input mono" maxlength="50" />
+            </label>
+            <label>
+                <span>ملاحظة</span>
+                <input asp-for="Input.Note" class="input" maxlength="600" />
+            </label>
+        </div>
+
+        <div style="margin-top:var(--space-4);display:flex;gap:var(--space-2);">
+            <button type="submit" class="btn">@(opened is not null ? "احفظ التعديل" : "أضف العميل")</button>
+            @if (opened is not null)
+            {
+                <a class="btn btn-tertiary" asp-page="/Settings/Clients">عميل جديد</a>
+            }
+        </div>
+    </form>
+</div>

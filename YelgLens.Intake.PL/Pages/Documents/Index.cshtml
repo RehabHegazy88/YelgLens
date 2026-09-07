@@ -1,0 +1,355 @@
+@page "/Documents"
+@using YelgLens.Intake.Model.Enums
+@using YelgLens.Intake.BLL.ViewModel
+@model YelgLens.Intake.PL.Pages.Documents.IndexModel
+@{
+    ViewData["Title"] = "قائمة المراجعة";
+    Layout = "Shared/_Layout";
+
+    var result = Model.Result;
+}
+
+<div class="page-head">
+    <div>
+        <h1>قائمة المراجعة</h1>
+        <p class="t-body-sm muted">
+            المستند يُفتح فيُراجَع حقلاً حقلاً. اللون على يمين القيمة يدل على مصدرها،
+            والمقروء آلياً لا يُعتمد قبل النظر فيه.
+        </p>
+    </div>
+    <a class="btn btn-secondary" href="/">رفع مستند جديد</a>
+</div>
+
+<form method="get" class="filter-bar" style="margin-bottom:var(--space-5);">
+    <div class="field" style="flex:1 1 240px;">
+        <label class="t-label" for="q">بحث</label>
+        <input class="input" type="search" id="q" name="q" value="@Model.Q"
+               placeholder="رقم أمر الشراء أو العميل أو الفرع أو اسم الملف" />
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="from">من تاريخ</label>
+        <input class="input" type="date" id="from" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="to">إلى تاريخ</label>
+        <input class="input" type="date" id="to" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="size">لكل صفحة</label>
+        <select class="select" id="size" name="size">
+            @foreach (var size in YelgLens.Intake.PL.Pages.Documents.IndexModel.PageSizes)
+            {
+                <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="odoo">الترحيل لأودو</label>
+        <select class="select" id="odoo" name="odoo">
+            @foreach (var option in Enum.GetValues<PublishFilter>())
+            {
+                <option value="@option" selected="@(Model.Publish == option)">
+                    @YelgLens.Intake.PL.Pages.Documents.IndexModel.PublishLabel(option)
+                </option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="arch">الأرشيف</label>
+        <select class="select" id="arch" name="arch">
+            <option value="Live" selected="@(Model.Archived == ArchiveFilter.Live)">القائم</option>
+            <option value="Archived" selected="@(Model.Archived == ArchiveFilter.Archived)">المؤرشف</option>
+            <option value="All" selected="@(Model.Archived == ArchiveFilter.All)">الاثنان</option>
+        </select>
+    </div>
+
+    <div class="field">
+        <label class="t-label" for="newest">الترتيب</label>
+        <select class="select" id="newest" name="newest">
+            <option value="false" selected="@(!Model.NewestFirst)">الأقدم أولاً</option>
+            <option value="true" selected="@Model.NewestFirst">الأحدث أولاً</option>
+        </select>
+    </div>
+
+    @* الحالة تُختار من الشارات فوق الجدول، وتُحمل هنا حتى لا يُسقطها البحث. *@
+    @if (Model.Status is { } current)
+    {
+        <input type="hidden" name="status" value="@current" />
+    }
+
+    <div class="field" style="align-self:flex-end;flex-direction:row;gap:var(--space-2);">
+        <button type="submit" class="btn">بحث</button>
+        @if (Model.HasFilter)
+        {
+            <a class="btn btn-tertiary" href="/Documents">مسح</a>
+        }
+    </div>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")" role="status"
+         style="margin-bottom:var(--space-4);">
+        @Model.Feedback
+    </div>
+}
+
+<div class="chips" style="margin-bottom:var(--space-5);">
+    <a class="chip @(Model.Status is null ? "is-selected" : "")"
+       asp-page="/Documents/Index" asp-all-route-data="@Model.Link(status: null, keepStatus: false)">
+        الكل <b class="mono">@Model.Counts.Values.Sum()</b>
+    </a>
+
+    @foreach (var status in Enum.GetValues<IntakeStatus>())
+    {
+        <a class="chip @(Model.Status == status ? "is-selected" : "")"
+           asp-page="/Documents/Index" asp-all-route-data="@Model.Link(status: status, keepStatus: false)">
+            @YelgLens.Intake.PL.Pages.Documents.IndexModel.StatusLabel(status)
+            <b class="mono">@(Model.Counts.TryGetValue(status, out var n) ? n : 0)</b>
+        </a>
+    }
+
+    @* الأرشيف شارةٌ هنا لا حقلٌ سادس في شريط البحث: ما يُبحث عنه بالعين
+       يُوضع حيث تقع العين، لا حيث يقع منطق الترشيح. *@
+    <a class="chip @(Model.Archived == ArchiveFilter.Archived ? "is-selected" : "")"
+       style="margin-inline-start:var(--space-4);"
+       href="/Documents?arch=@(Model.Archived == ArchiveFilter.Archived ? "Live" : "Archived")">
+        @if (Model.Archived == ArchiveFilter.Archived)
+        {
+            <text>← ارجع للقائم</text>
+        }
+        else
+        {
+            <text>المؤرشف</text>
+            <b class="mono">@Model.ArchivedCount</b>
+        }
+    </a>
+</div>
+
+@if (Model.Archived == ArchiveFilter.Archived)
+{
+    <div class="alert alert-info" role="status"
+         style="margin-bottom:var(--space-4);background:var(--color-info-surface);
+                border-color:var(--color-info-border);color:var(--color-info);">
+        هذه قائمة <strong>&nbsp;المؤرشف</strong> — مخفيٌّ عن بقية الشاشات وملفاته الأصلية باقية.
+        أشِّر على ما تريد إعادته ثم اضغط «أعِدها إلى القائمة».
+    </div>
+}
+
+@if (result.Total == 0)
+{
+    <div class="empty">
+        <p class="t-body">
+            @(Model.HasFilter
+                ? "لا مستند يطابق هذا الترشيح."
+                : "لا مستندات بعد. أول مستند يظهر هنا فور رفعه من الميدان.")
+        </p>
+        @if (Model.HasFilter)
+        {
+            <a class="btn btn-secondary" href="/Documents" style="margin-top:var(--space-4);">اعرض الكل</a>
+        }
+    </div>
+}
+else
+{
+    <form method="post" id="bulk">
+    <div class="table-wrap">
+        <table class="data">
+            <thead>
+                <tr>
+                    @if (Model.CanArchive)
+                    {
+                        <th style="width:40px;">
+                            <input type="checkbox" id="pick-all" title="أشِّر على الكل في هذه الصفحة" />
+                        </th>
+                    }
+                    <th>#</th>
+                    <th>رقم أمر الشراء</th>
+                    <th>الفرع</th>
+                    <th>الملف</th>
+                    <th class="num">البنود</th>
+                    <th>رفعه</th>
+                    <th>التاريخ</th>
+                    <th>الحالة</th>
+                    <th>أودو</th>
+                    <th><span class="sr-only">إجراء</span></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var doc in result.Items)
+            {
+                <tr class="@(doc.Deleted ? "archived" : "")">
+                    @if (Model.CanArchive)
+                    {
+                        <td>
+                            <input type="checkbox" name="Selected" value="@doc.Id" class="pick" />
+                        </td>
+                    }
+                    <td class="mono">@doc.Id</td>
+                    <td class="mono">@(doc.CustomerPoNumber.HasValue ? doc.CustomerPoNumber.Value : "—")</td>
+                    <td>@(doc.BranchLabel.HasValue ? doc.BranchLabel.Value : "—")</td>
+                    <td style="max-width:22ch;overflow:hidden;text-overflow:ellipsis;" title="@doc.SourceFileName">
+                        @doc.SourceFileName
+                    </td>
+                    <td class="num">@doc.Lines.Count</td>
+                    <td>@(doc.UploadedBy?.FullName ?? "—")</td>
+                    <td class="mono">@doc.UploadedDate.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        <span class="badge @YelgLens.Intake.PL.Pages.Documents.IndexModel.StatusBadge(doc.Status)">
+                            @YelgLens.Intake.PL.Pages.Documents.IndexModel.StatusLabel(doc.Status)
+                        </span>
+                    </td>
+                    <td>
+                        @* حال الترحيل يُقرأ من القائمة لا بفتح كل مستند: السؤال
+                           «أيها لم يصل أودو؟» يُسأل عن الطابور كله لا عن واحد. *@
+                        @if (doc.IsPublished)
+                        {
+                            <span class="badge badge-success" title="على قاعدة @doc.OdooDatabase">
+                                @doc.OdooOrderName
+                            </span>
+
+                            @if (doc.SourceNotSent)
+                            {
+                                <span class="badge badge-warning"
+                                      title="@(doc.AttachError ?? "الأصل لم يُرفع على الأوردر")">
+                                    الأصل لم يُرسَل
+                                </span>
+                            }
+                        }
+                        else if (!string.IsNullOrWhiteSpace(doc.PublishError))
+                        {
+                            <span class="badge badge-error" title="@doc.PublishError">فشل</span>
+                        }
+                        else
+                        {
+                            <span class="t-caption muted">—</span>
+                        }
+                    </td>
+                    <td><a class="link-btn" href="/Documents/Review/@doc.Id">فتح</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    @* شريط الفعل يظهر بالتأشير ويختفي بدونه: زرٌّ يخفي مستندات لا يقف
+       معروضاً في انتظار ضغطةٍ بالخطأ. *@
+    @if (Model.CanArchive)
+    {
+        <div id="bulk-bar" class="row" hidden
+             style="margin-top:var(--space-4);padding:var(--space-3) var(--space-4);
+                    background:var(--color-surface);border:var(--border-hairline) solid var(--color-border);
+                    border-radius:var(--radius-md);gap:var(--space-3);">
+            <span class="t-body-sm"><strong id="pick-count">0</strong> مؤشَّر</span>
+
+            @if (Model.Archived == ArchiveFilter.Archived)
+            {
+                <button type="submit" asp-page-handler="Restore" class="btn btn-secondary">
+                    أعِدها إلى القائمة
+                </button>
+            }
+            else
+            {
+                <button type="submit" asp-page-handler="Archive" class="btn btn-tertiary"
+                        onclick="return confirm('أرشفة المؤشَّر؟ يختفي من الشاشات ويبقى الملف الأصلي، ويمكن إعادته.');">
+                    أرشِف المؤشَّر
+                </button>
+            }
+
+            <span class="t-caption muted">
+                الأرشفة إخفاء لا محو — الملف الأصلي يبقى، والإعادة من مرشِّح «المؤرشف».
+            </span>
+        </div>
+    }
+    </form>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
+                flex-wrap:wrap;margin-top:var(--space-4);">
+        <p class="t-body-sm muted" style="margin:0;">
+            <span class="mono">@result.FirstIndex</span>–<span class="mono">@result.LastIndex</span>
+            من <span class="mono">@result.Total</span>
+        </p>
+
+        @if (result.PageCount > 1)
+        {
+            <nav class="pagination" aria-label="صفحات النتائج">
+                <a class="btn btn-tertiary btn-sm @(result.HasPrevious ? "" : "is-disabled")"
+                   asp-page="/Documents/Index"
+                   asp-all-route-data="@Model.Link(page: result.Page - 1)"
+                   aria-disabled="@(result.HasPrevious ? "false" : "true")">السابق</a>
+
+                @{
+                    // نافذة ضيّقة حول الصفحة الحالية: قائمة مئة زرّ لا تُقرأ،
+                    // والقفز البعيد يتم بالترشيح لا بالترقيم.
+                    var first = Math.Max(1, result.Page - 2);
+                    var last = Math.Min(result.PageCount, first + 4);
+                    first = Math.Max(1, last - 4);
+                }
+
+                @if (first > 1)
+                {
+                    <a asp-page="/Documents/Index" asp-all-route-data="@Model.Link(page: 1)">1</a>
+                    <span class="muted">…</span>
+                }
+
+                @for (var n = first; n <= last; n++)
+                {
+                    <a asp-page="/Documents/Index" asp-all-route-data="@Model.Link(page: n)"
+                       aria-current="@(n == result.Page ? "page" : null)">@n</a>
+                }
+
+                @if (last < result.PageCount)
+                {
+                    <span class="muted">…</span>
+                    <a asp-page="/Documents/Index" asp-all-route-data="@Model.Link(page: result.PageCount)">@result.PageCount</a>
+                }
+
+                <a class="btn btn-tertiary btn-sm @(result.HasNext ? "" : "is-disabled")"
+                   asp-page="/Documents/Index"
+                   asp-all-route-data="@Model.Link(page: result.Page + 1)"
+                   aria-disabled="@(result.HasNext ? "false" : "true")">التالي</a>
+            </nav>
+        }
+    </div>
+}
+
+
+<style>
+    tr.archived td { opacity:.55; }
+    tr.archived td:first-child { opacity:1; }
+</style>
+
+@if (Model.CanArchive)
+{
+    <script>
+        (function () {
+            var all = document.getElementById('pick-all');
+            var bar = document.getElementById('bulk-bar');
+            var count = document.getElementById('pick-count');
+            if (!bar) return;
+
+            function picks() { return Array.prototype.slice.call(document.querySelectorAll('.pick')); }
+
+            function refresh() {
+                var on = picks().filter(function (p) { return p.checked; }).length;
+                count.textContent = on;
+                bar.hidden = on === 0;
+                if (all) all.checked = on > 0 && on === picks().length;
+            }
+
+            picks().forEach(function (p) { p.addEventListener('change', refresh); });
+
+            if (all) all.addEventListener('change', function () {
+                picks().forEach(function (p) { p.checked = all.checked; });
+                refresh();
+            });
+
+            refresh();
+        })();
+    </script>
+}

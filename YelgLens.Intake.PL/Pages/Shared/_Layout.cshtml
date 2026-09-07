@@ -1,0 +1,180 @@
+﻿@inject Microsoft.AspNetCore.Authorization.IAuthorizationService Authorization
+@inject YelgLens.Intake.BLL.Services.Tenancy.IClientContext Clients
+@using YelgLens.Intake.Model.Auth
+@{
+    var signedIn = User.Identity?.IsAuthenticated == true;
+
+    // العميل المعمول عليه يُعرض في كل صفحة: كل ما تحته من أرقام يخصّه وحده،
+    // ومن لا يرى أيّهم يعمل عليه قد يقرأ أرقام عميلٍ ويظنّها لآخر.
+    var myClients = signedIn ? await Clients.AvailableAsync() : new();
+    var myClient = signedIn ? await Clients.CurrentAsync() : null;
+
+    // عميلٌ بلا وصلةٍ مفعَّلة يجعل كل الشاشات فارغة. تُقال الحالة صراحةً:
+    // شاشةٌ فارغة بلا سبب تُقرأ عطلاً، وهي في الحقيقة خطوةٌ لم تُتَّخذ بعد.
+    var noConnection = myClient is not null && await Clients.ActiveConnectionAsync() is null;
+    var canReview = signedIn && (await Authorization.AuthorizeAsync(User, PermissionCodes.DocumentReview)).Succeeded;
+    var canManage = signedIn && (await Authorization.AuthorizeAsync(User, PermissionCodes.UserManage)).Succeeded;
+
+    // الصفحة الحالية تُعلَّم في القائمة بالمسار لا بالاسم: المسار هو ما يراه
+    // المستخدم في شريط العنوان، وهو ما يبقى صحيحاً لو تغيّر اسم الصفحة.
+    var path = (Context.Request.Path.Value ?? "/").TrimEnd('/');
+    if (path.Length == 0) path = "/";
+
+    string Current(string href) =>
+        string.Equals(path, href.TrimEnd('/') is { Length: > 0 } h ? h : "/", StringComparison.OrdinalIgnoreCase)
+            ? "true" : "false";
+}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] — YELG Lens</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Noto+Kufi+Arabic:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="~/css/yelg-design-system.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/intake.css" asp-append-version="true" />
+</head>
+<body>
+    <a class="skip-link" href="#main">تخطَّ إلى المحتوى</a>
+
+    @if (!signedIn)
+    {
+        <main id="main" class="main">
+            <div class="section wrap">@RenderBody()</div>
+        </main>
+    }
+    else
+    {
+        <div class="shell">
+            <aside class="sidebar" id="sidebar">
+                <a class="sidebar-brand" href="@(canReview ? "/Dashboard" : "/")">
+                    <span class="brand-word">
+                        <b>YELG</b>
+                        <span>LENS</span>
+                    </span>
+                </a>
+                <div class="sidebar-meta">استقبال مستندات الموردين</div>
+
+                <nav class="nav-group" aria-label="التنقل الرئيسي">
+                    <h4>المستندات</h4>
+                    <ul class="nav-list">
+                        @if (canReview)
+                        {
+                            <li><a href="/Dashboard" aria-current="@Current("/Dashboard")">لوحة المتابعة</a></li>
+                            <li><a href="/Documents" aria-current="@Current("/Documents")">قائمة المراجعة</a></li>
+                        }
+                        @if (canReview)
+                        {
+                            <li><a href="/Quotations" aria-current="@Current("/Quotations")">أوردرات أودو</a></li>
+                            <li><a href="/Products" aria-current="@Current("/Products")">المنتجات والأسعار</a></li>
+                        }
+                        <li><a href="/" aria-current="@Current("/")">رفع مستند</a></li>
+                        <li><a href="/MyDocuments" aria-current="@Current("/MyDocuments")">مستنداتي</a></li>
+                    </ul>
+                </nav>
+
+                @if (canReview || canManage)
+                {
+                    <div class="nav-group">
+                        <h4>الإعداد</h4>
+                        <ul class="nav-list">
+                            @if (canReview)
+                            {
+                                <li><a href="/Branches" aria-current="@Current("/Branches")">دليل الفروع</a></li>
+                                <li><a href="/Mappings" aria-current="@Current("/Mappings")">ربط الفروع</a></li>
+                            }
+                            @if (canManage)
+                            {
+                                <li><a href="/Users" aria-current="@Current("/Users")">المستخدمون</a></li>
+                                <li><a href="/Settings/Clients" aria-current="@Current("/Settings/Clients")">العملاء</a></li>
+                                <li><a href="/Settings/Odoo" aria-current="@Current("/Settings/Odoo")">إعدادات أودو</a></li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </aside>
+
+            <div class="main">
+                <header class="topbar">
+                    <button type="button" class="btn btn-ghost btn-icon menu-toggle" id="menu-toggle"
+                            aria-controls="sidebar" aria-expanded="false" aria-label="القائمة">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                            <path d="M4 7h16M4 12h16M4 17h16" />
+                        </svg>
+                    </button>
+
+                    <span class="topbar-title">@ViewData["Title"]</span>
+                    <span class="topbar-spacer"></span>
+
+                    @if (signedIn && myClients.Count > 0)
+                    {
+                        <form method="post" asp-page="/Settings/SwitchClient" style="margin:0;">
+                            <select name="clientId" class="input" style="min-width:150px;padding:4px 8px;"
+                                    onchange="this.form.submit();"
+                                    aria-label="العميل الذي تعمل عليه">
+                                @foreach (var client in myClients)
+                                {
+                                    <option value="@client.Id" selected="@(client.Id == myClient?.Id)">
+                                        @client.Display
+                                    </option>
+                                }
+                            </select>
+                        </form>
+                    }
+                    else if (signedIn && myClient is null)
+                    {
+                        <span class="badge badge-warning">لا عميل مُسنَد إليك</span>
+                    }
+
+                    <span class="t-body-sm muted">
+                        @(User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value ?? User.Identity!.Name)
+                    </span>
+                    <form method="post" asp-page="/Account/Logout" style="margin:0;">
+                        <button type="submit" class="btn btn-tertiary btn-sm">خروج</button>
+                    </form>
+                </header>
+
+                @if (noConnection)
+                {
+                    <div class="alert alert-warning" role="alert"
+                         style="margin:var(--space-4) var(--space-5) 0;">
+                        <strong>«@myClient!.Display» بلا وصلة أودو مفعَّلة.</strong>
+                        كل الشاشات ستظهر فارغة حتى تُفعَّل واحدة —
+                        @if (canManage)
+                        {
+                            <a href="/Settings/Odoo">افتح إعدادات أودو واضغط «فعّله»</a><text>.</text>
+                        }
+                        else
+                        {
+                            <text>راجع مسؤول النظام.</text>
+                        }
+                    </div>
+                }
+
+                <main id="main" class="section">
+                    @RenderBody()
+                </main>
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                var toggle = document.getElementById('menu-toggle');
+                var sidebar = document.getElementById('sidebar');
+                if (!toggle || !sidebar) return;
+
+                toggle.addEventListener('click', function () {
+                    var open = sidebar.classList.toggle('open');
+                    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                });
+            })();
+        </script>
+    }
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

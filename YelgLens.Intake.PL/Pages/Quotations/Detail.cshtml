@@ -1,0 +1,280 @@
+﻿@page "/Quotations/{id:long}"
+@model YelgLens.Intake.PL.Pages.Quotations.DetailModel
+@{
+    var detail = Model.Detail;
+    ViewData["Title"] = detail is null ? "أوردر أودو" : $"أوردر {detail.Header.Name}";
+    Layout = "Shared/_Layout";
+}
+
+<style>
+    .kv { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:var(--space-4); }
+    .kv .k { font-size:var(--text-caption); color:var(--color-text-tertiary); margin-bottom:2px; }
+    .kv .v { font-size:var(--text-body-sm); color:var(--color-text-primary); }
+
+    table.lines { width:100%; border-collapse:collapse; }
+    table.lines th, table.lines td {
+        padding:var(--space-2) var(--space-3); text-align:start; font-size:var(--text-body-sm);
+        border-block-end:var(--border-hairline) solid var(--color-divider); vertical-align:middle;
+    }
+    table.lines th { background:var(--neutral-50); color:var(--neutral-600); font-weight:700; font-size:var(--text-caption); }
+    table.lines td.num { text-align:end; font-variant-numeric:tabular-nums; direction:ltr; }
+    table.lines tr.gone td { opacity:.45; text-decoration:line-through; }
+
+    input.qty {
+        width:92px; text-align:center; direction:ltr;
+        border:var(--border-hairline) solid var(--color-border-strong); border-radius:var(--radius-sm);
+        padding:6px 8px; font:inherit; font-size:var(--text-body-sm); background:var(--color-surface);
+    }
+    input.qty:focus { outline:none; border-color:var(--blue-600); box-shadow:0 0 0 3px var(--blue-100); }
+    input.qty[type=number]{ -moz-appearance:textfield; }
+    input.qty::-webkit-outer-spin-button, input.qty::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+
+    .totals { display:flex; justify-content:flex-end; gap:var(--space-8); padding:var(--space-4) var(--space-5); border-block-start:var(--border-hairline) solid var(--color-border); }
+    .totals div { text-align:end; }
+    .totals .k { font-size:var(--text-caption); color:var(--color-text-tertiary); }
+    .totals .v { font-variant-numeric:tabular-nums; direction:ltr; font-weight:700; }
+
+    .add-bar { display:flex; gap:var(--space-3); align-items:flex-end; flex-wrap:wrap; padding:var(--space-4) var(--space-5); border-block-start:var(--border-hairline) solid var(--color-border); background:var(--neutral-50); }
+</style>
+
+<div class="page-head">
+    <div>
+        <h1>@(detail is null ? "أوردر أودو" : detail.Header.Name)</h1>
+        <p class="t-body-sm muted">
+            على قاعدة <span class="mono">@Model.Database</span> — يُقرأ ويُعدَّل من هنا بلا فتح أودو.
+        </p>
+    </div>
+    <a class="btn btn-secondary" href="/Quotations">رجوع للقائمة</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Feedback))
+{
+    <div class="alert @(Model.FeedbackKind == "ok" ? "alert-success" : "alert-error")" role="status"
+         style="margin-bottom:var(--space-5);">
+        @Model.Feedback
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-error" role="status">@Model.Error</div>
+}
+else if (detail is not null)
+{
+    <div class="card" style="margin-bottom:var(--space-5);">
+        <div class="row" style="justify-content:space-between;margin-bottom:var(--space-4);">
+            <span class="badge @detail.Header.StateBadge">@detail.Header.StateLabel</span>
+            @if (Model.DocumentId is { } documentId)
+            {
+                <a class="link-btn" href="/Documents/Review/@documentId">افتح مستندنا #@documentId</a>
+            }
+            else
+            {
+                <span class="t-caption muted">لم يُنشأ من هذا النظام</span>
+            }
+        </div>
+
+        <div class="kv">
+            <div><div class="k">العميل</div><div class="v">@detail.Header.Customer</div></div>
+            <div><div class="k">مرجع العميل</div><div class="v mono">@(detail.Header.Reference ?? "—")</div></div>
+            <div><div class="k">تاريخ الأمر</div><div class="v mono">@(detail.Header.OrderDate?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+            <div><div class="k">قائمة الأسعار</div><div class="v">@(detail.Pricelist ?? "—")</div></div>
+            <div><div class="k">عنوان الفوترة</div><div class="v">@(detail.InvoiceAddress ?? "—")</div></div>
+            <div><div class="k">عنوان التسليم</div><div class="v">@(detail.DeliveryAddress ?? "—")</div></div>
+        </div>
+    </div>
+
+    @* ── التأكيد: الدليل من أودو نفسه، والحذف بإقرار من رآه ────────── *@
+    @if (Model.DocumentId is not null)
+    {
+        <div class="card" style="margin-bottom:var(--space-5);
+                    border-inline-start:3px solid @(Model.HasLocalCopy ? "var(--color-warning)" : "var(--color-success)");">
+            <h2 class="t-h5" style="margin:0 0 var(--space-2);">أصل المستند</h2>
+
+            @if (Model.Attachments.Count == 0)
+            {
+                <p class="t-body-sm" style="margin:0 0 var(--space-3);color:var(--color-error);">
+                    لا مرفق على هذا الأوردر في أودو. لا تُحذف نسختنا قبل أن يصل الأصل —
+                    افتح المستند واضغط «أعد إرسال الأصل».
+                </p>
+            }
+            else
+            {
+                <p class="t-body-sm muted" style="margin:0 0 var(--space-3);max-width:70ch;">
+                    هذه المرفقات مقروءةٌ من أودو الآن، لا من سجلّنا.
+                    @if (Model.HasLocalCopy)
+                    {
+                        <text>
+                            افتح كل واحدٍ منها وتأكّد أنه يُعرض ويُقرأ، ثم أقرّ حذف نسختنا.
+                        </text>
+                    }
+                </p>
+
+                <div class="table-wrap" style="margin-bottom:var(--space-4);">
+                    <table class="data">
+                        <thead>
+                            <tr>
+                                <th>المرفق</th>
+                                <th>النوع</th>
+                                <th class="num">الحجم</th>
+                                <th><span class="sr-only">عرض</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var file in Model.Attachments)
+                        {
+                            <tr>
+                                <td style="white-space:normal;max-width:40ch;">@file.Name</td>
+                                <td class="mono t-caption">@file.MimeType</td>
+                                <td class="num">@((file.Bytes / 1024.0).ToString("N0")) ك.ب</td>
+                                <td>
+                                    <a class="link-btn" target="_blank" rel="noopener"
+                                       href="/Quotations/@detail.Header.Id?handler=Attachment&attachment=@file.Id">
+                                        افتحه من أودو
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @if (!Model.HasLocalCopy)
+            {
+                <p class="t-body-sm" style="margin:0;color:var(--color-success);">
+                    نسختنا محذوفة — الأصل في أودو وحده، ويُعرض من هنا.
+                </p>
+            }
+            else if (Model.Attachments.Count > 0)
+            {
+                <form method="post" asp-page-handler="Release" asp-route-id="@detail.Header.Id"
+                      class="row" style="margin:0;gap:var(--space-3);"
+                      onsubmit="return confirm('تأكيد: رأيتَ المرفقات في أودو وهي سليمة، وتُقرّ حذف نسختنا؟ الحذف لا رجعة فيه.');">
+                    <button type="submit" class="btn btn-tertiary">
+                        رأيته في أودو — احذف نسختنا
+                    </button>
+                    <span class="t-caption muted">
+                        يُعاد التحقق من عدد المرفقات وأحجامها قبل الحذف. ولا يُحذف شيء إن لم تطابق.
+                    </span>
+                </form>
+            }
+        </div>
+    }
+
+    @if (!detail.IsEditable)
+    {
+        @* المؤكَّد يُعرض ولا يُعدَّل: تعديل بنوده بعد التأكيد يترك إذن التسليم
+           على حاله فيُسلَّم غير ما في الأمر. *@
+        <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-4);">
+            هذا الأوردر حالته «@detail.Header.StateLabel» فيُعرض ولا يُعدَّل من هنا.
+            التأكيد يحجز مخزوناً ويولّد إذن تسليم، وتعديله يُعالَج في أودو حيث تُعالَج توابعه.
+        </div>
+    }
+    else if (!Model.CanEdit)
+    {
+        <div class="alert alert-warning" role="status" style="margin-bottom:var(--space-4);">
+            التعديل مغلق. يُفتح بتعليم «اسمح بالكتابة في أودو» على الوصلة المعمول بها من
+            <a href="/Settings/Odoo">إعدادات أودو</a>.
+        </div>
+    }
+
+    <form method="post" asp-page-handler="Save" asp-route-id="@detail.Header.Id">
+        <div class="card" style="padding:0;overflow:hidden;">
+            <div class="table-wrap" style="border:0;border-radius:0;">
+                <table class="lines">
+                    <thead>
+                        <tr>
+                            <th style="width:52px;">#</th>
+                            <th>المنتج</th>
+                            <th style="width:150px;">الرمز</th>
+                            <th style="width:120px;">الكمية</th>
+                            <th style="width:120px;">سعر الوحدة</th>
+                            <th style="width:130px;">الإجمالي</th>
+                            @if (detail.IsEditable && Model.CanEdit)
+                            {
+                                <th style="width:70px;">حذف</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for (var i = 0; i < detail.Lines.Count; i++)
+                    {
+                        var line = detail.Lines[i];
+                        var index = i;
+
+                        <tr>
+                            <td class="mono">@(i + 1)</td>
+                            <td style="white-space:normal;">@line.Product</td>
+                            <td class="mono">@(line.Code ?? "—")</td>
+                            <td>
+                                @if (detail.IsEditable && Model.CanEdit)
+                                {
+                                    <input type="hidden" asp-for="Lines[index].Id" />
+                                    <input class="qty" type="number" step="0.01" min="0"
+                                           asp-for="Lines[index].Quantity" />
+                                }
+                                else
+                                {
+                                    <span class="mono">@line.Quantity.ToString("N2")</span>
+                                }
+                            </td>
+                            <td class="num">@line.UnitPrice.ToString("N2")</td>
+                            <td class="num">@line.Subtotal.ToString("N2")</td>
+                            @if (detail.IsEditable && Model.CanEdit)
+                            {
+                                <td style="text-align:center;">
+                                    <input type="checkbox" asp-for="Lines[index].Remove"
+                                           title="احذف هذا البند من الأوردر" />
+                                </td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="totals">
+                <div>
+                    <div class="k">قبل الضريبة</div>
+                    <div class="v">@detail.Untaxed.ToString("N2") @detail.Header.Currency</div>
+                </div>
+                <div>
+                    <div class="k">الضريبة</div>
+                    <div class="v">@detail.Tax.ToString("N2")</div>
+                </div>
+                <div>
+                    <div class="k">الإجمالي</div>
+                    <div class="v" style="font-size:1.05rem;color:var(--color-brand-navy);">
+                        @detail.Header.Total.ToString("N2") @detail.Header.Currency
+                    </div>
+                </div>
+            </div>
+
+            @if (detail.IsEditable && Model.CanEdit)
+            {
+                <div class="add-bar">
+                    <div class="field" style="flex:1 1 200px;">
+                        <label class="t-label" asp-for="NewCode">أضف بنداً — رمز المنتج أو الباركود</label>
+                        <input class="input" asp-for="NewCode" autocomplete="off" spellcheck="false"
+                               placeholder="6224001927225" dir="ltr" />
+                    </div>
+                    <div class="field" style="flex:0 0 130px;">
+                        <label class="t-label" asp-for="NewQuantity">الكمية</label>
+                        <input class="input" type="number" step="0.01" min="0" asp-for="NewQuantity" dir="ltr" />
+                    </div>
+                    <button type="submit" class="btn">احفظ في أودو</button>
+                </div>
+            }
+        </div>
+    </form>
+
+    @if (detail.IsEditable && Model.CanEdit)
+    {
+        <p class="t-caption muted" style="margin-top:var(--space-3);">
+            التعديلات تُرسل إلى أودو دفعةً واحدة. البند الجديد يُطابَق برمزه في
+            <span class="mono">barcode</span> و<span class="mono">default_code</span> معاً،
+            ولا يُضاف إن طابق الرمزُ أكثر من منتج.
+        </p>
+    }
+}

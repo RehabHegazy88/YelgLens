@@ -1,0 +1,135 @@
+/* أنماط هذا التطبيق وحده — كل ما عداها يأتي من نظام التصميم.
+   القاعدة: لا لون ولا مسافة مكتوبة بالرقم هنا، بل متغيّر من :root. */
+
+/* نظام التصميم مكتوب لصفحة عرض، وحشوة قسمه ثمانون بكسل. شاشة العمل
+   تُقرأ طول اليوم، فتُقرَّب الحشوة ويُرفع الشريط السفلي الفاصل. */
+.section {
+    padding: var(--space-6) var(--gutter-desktop) var(--space-16);
+    border-block-end: 0;
+    max-width: var(--width-wide);
+}
+
+@media (max-width: 1024px) {
+    .section { padding: var(--space-5) var(--gutter-tablet) var(--space-12); }
+}
+
+@media (max-width: 640px) {
+    .section { padding: var(--space-4) var(--gutter-mobile) var(--space-10); }
+}
+
+.page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-5);
+}
+
+.page-head h1 { font-size: var(--text-h4); font-weight: 700; margin: 0 0 var(--space-1); }
+.page-head p  { margin: 0; max-width: var(--width-prose); }
+
+/* الأرقام تُقرأ عموداً: تُساوى خاناتها ويُثبَّت اتجاهها مهما كان اتجاه الصفحة. */
+.mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    unicode-bidi: plaintext;
+}
+
+.raw {
+    display: block;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: var(--text-caption);
+    color: var(--color-text-tertiary);
+    direction: ltr;
+}
+
+/* ============================================================
+   الرفع من الميدان: زرٌّ يُضغط بإبهام واحد واليد الأخرى ممسكة بالورقة
+   ============================================================ */
+.capture {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 72px;
+    padding: var(--space-5);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--color-brand-primary);
+    color: var(--color-text-on-primary);
+    font: inherit;
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.capture:hover { background: var(--color-brand-primary-hover); }
+.capture svg { width: 26px; height: 26px; flex-shrink: 0; }
+
+.page-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-hairline) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-background);
+    margin-block-end: var(--space-2);
+    font-size: var(--text-body-sm);
+}
+
+.page-row .n { width: 26px; height: 26px; border-radius: var(--radius-full); background: var(--color-brand-navy); color: var(--color-text-on-primary); display: grid; place-items: center; font-size: var(--text-caption); flex-shrink: 0; }
+.page-row .nm { flex: 1; min-width: 0; word-break: break-word; color: var(--color-text-primary); }
+.page-row .sz { color: var(--color-text-tertiary); font-size: var(--text-caption); white-space: nowrap; }
+
+input[type=file].hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* ============================================================
+   امتدادات على نظام التصميم — لا تعديل عليه
+   ============================================================ */
+
+/* الترقيم في النظام مكتوبٌ لأزرار، وصفحات هذه القائمة روابط: الرابط يُفتح
+   في تبويب جديد ويُنسخ عنوانه، والزر لا. فتُعطى الروابط مظهر الأزرار. */
+.pagination a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: var(--space-3);
+    border: var(--border-hairline) solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--neutral-700);
+    text-decoration: none;
+}
+
+.pagination a:hover { background: var(--blue-50); border-color: var(--blue-200); }
+
+.pagination a[aria-current="page"] {
+    background: var(--color-brand-primary);
+    border-color: var(--color-brand-primary);
+    color: var(--color-text-on-primary);
+}
+
+.pagination a.is-disabled { pointer-events: none; opacity: .5; }
+
+/* الشارة المختارة تُعرف بالتباين لا بالإطار وحده. */
+.chip { text-decoration: none; }
+.chip:hover { background: var(--blue-100); }
+
+.chip.is-selected {
+    background: var(--color-brand-primary);
+    border-color: var(--color-brand-primary);
+    color: var(--color-text-on-primary);
+}
+
+.chip b { font-weight: 700; opacity: .75; }
+
+/* شاشة الدخول وحدها بلا هيكل جانبي: لا قائمة لمن لم يدخل بعد. */
+.login-wrap { max-width: 420px; margin: 8vh auto 0; }
