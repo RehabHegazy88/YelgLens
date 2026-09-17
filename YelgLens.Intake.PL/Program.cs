@@ -121,15 +121,20 @@ builder.Services.AddSingleton<IOcrEngine>(sp =>
     var log = factory.CreateLogger("Ocr");
 
     // المحلي أولاً: مجاني ولا يُخرج المستند من الجهاز.
+    //
+    // ويُحتفظ به حتى وهو معطّل: استبداله بـ UnconfiguredOcrEngine كان يمحو
+    // سبب تعطّله، فتقول الشاشة «لا محرك» والإعدادات مضبوطة — وهو أسوأ من
+    // الصمت، لأنه يوجّه من يقرؤه إلى المكان الخطأ. المحرك المعطّل يعرف لماذا
+    // تعطّل، والبديل الفارغ لا يعرف شيئاً.
     IOcrEngine local = new UnconfiguredOcrEngine();
+
     if (string.Equals(ocrSettings.Engine, "tesseract", StringComparison.OrdinalIgnoreCase))
     {
         var tesseract = new TesseractOcrEngine(ocrSettings, factory.CreateLogger<TesseractOcrEngine>());
-        if (tesseract.IsAvailable) local = tesseract;
-        else
-            log.LogWarning(
-                "طُلب محرك tesseract وملفات اللغة ناقصة ({Missing}) في {Path} — يُعطَّل المحلي.",
-                string.Join(", ", tesseract.MissingLanguages()), ocrSettings.TessDataPath);
+        local = tesseract;
+
+        if (!tesseract.IsAvailable)
+            log.LogWarning("المحرك المحلي معطّل: {Reason}", tesseract.UnavailableReason);
     }
 
     // البديل السحابي: يُستدعى فقط حين لا يخرج المحلي ببند.

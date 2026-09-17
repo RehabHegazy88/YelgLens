@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YelgLens.Intake.BLL.Services.Review;
 using YelgLens.Intake.Model.Auth;
@@ -10,8 +10,18 @@ namespace YelgLens.Intake.PL.Pages;
 public class DashboardModel : PageModel
 {
     private readonly IIntakeDashboard _dashboard;
+    private readonly YelgLens.Intake.BLL.Services.Extraction.IOcrEngine _ocr;
 
-    public DashboardModel(IIntakeDashboard dashboard) => _dashboard = dashboard;
+    public DashboardModel(
+        IIntakeDashboard dashboard,
+        YelgLens.Intake.BLL.Services.Extraction.IOcrEngine ocr)
+    {
+        _dashboard = dashboard;
+        _ocr = ocr;
+    }
+
+    /// <summary>حال محرك القراءة — يُعرض ليُرى العطب لا ليُبحث عنه.</summary>
+    public YelgLens.Intake.BLL.Services.Extraction.OcrStatus Ocr => _ocr.Status;
 
     public DashboardView View { get; private set; } = null!;
 

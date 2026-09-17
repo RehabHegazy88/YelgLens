@@ -1,4 +1,5 @@
 ﻿using SkiaSharp;
+using System.Globalization;
 using YelgLens.Intake.Model.Documents;
 using YelgLens.Intake.Model.Enums;
 using ZXing.SkiaSharp;
@@ -12,6 +13,9 @@ namespace YelgLens.Intake.BLL.Services.Extraction;
 public interface IOcrEngine
 {
     bool IsAvailable { get; }
+
+    /// <summary>وصفٌ للعرض: أي محرك، وهل يعمل، ولماذا لا يعمل.</summary>
+    OcrStatus Status { get; }
     Task<IReadOnlyList<OcrLine>> ReadTableAsync(string imagePath, CancellationToken ct = default);
 
     /// <summary>
@@ -25,10 +29,35 @@ public interface IOcrEngine
         => ReadTableAsync(imagePath, ct)
             .ContinueWith(t => new OcrTable(t.Result, 0), ct,
                 TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+
+    /// <summary>
+    /// خلايا ما فوق الجدول، بمواضعها.
+    ///
+    /// الرأس لا يُقرأ سطراً واحداً لأنه ليس سطوراً: هو حقولٌ متجاورة، عنوانٌ
+    /// فوق قيمته أو بجوارها. والموضع هو ما يربط الاثنين، فيُعاد معه.
+    /// </summary>
+    Task<IReadOnlyList<OcrHeaderCell>> ReadHeaderAsync(string imagePath, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<OcrHeaderCell>>(Array.Empty<OcrHeaderCell>());
 }
+
+/// <summary>خليةٌ في رأس المستند: نصّها، وعمودها، وارتفاعها، وثقتها.</summary>
+public sealed record OcrHeaderCell(string Text, int Column, double Top, double Confidence);
 
 /// <summary>جدولٌ مقروء، ومعه عدد الصفوف التي بدت بنوداً ولم يُقرأ رمزها.</summary>
 public sealed record OcrTable(IReadOnlyList<OcrLine> Lines, int RowsWithoutCode);
+
+/// <summary>
+/// حال محرك القراءة، ليُعرض في الشاشة لا في السجل وحده.
+///
+/// وُضع بعد أن ظلّ المحرك المحلي معطّلاً على الخادم أياماً دون أن يظهر ذلك:
+/// كان يُعلن أنه متاح، ثم يسقط كل نداء، فيُحال كل مستند إلى السحابة بلا
+/// إعلان. العطب الصامت يُدار بعرضه، لا بالبحث عنه في السجلات.
+/// </summary>
+public sealed record OcrStatus(string Name, bool Available, string? Reason, string? Detail)
+{
+    /// <summary>حال المحرك الاحتياطي، إن وُجد.</summary>
+    public OcrStatus? Fallback { get; init; }
+}
 
 /// <summary>سطر مقروء ضوئياً — القيمة دائماً مصحوبة بدرجة ثقة.</summary>
 public sealed record OcrLine(string Code, string Description, decimal? Quantity, double Confidence);
@@ -41,6 +70,8 @@ public sealed record OcrLine(string Code, string Description, decimal? Quantity,
 public sealed class UnconfiguredOcrEngine : IOcrEngine
 {
     public bool IsAvailable => false;
+
+    public OcrStatus Status => new("لا محرك", false, "لم يُختر محرك قراءة في الإعدادات.", null);
 
     public Task<IReadOnlyList<OcrLine>> ReadTableAsync(string imagePath, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<OcrLine>>(Array.Empty<OcrLine>());
@@ -69,6 +100,7 @@ public sealed class ImageExtractor
         };
 
         ReadBarcode(order, filePath);
+        await ReadHeaderAsync(order, filePath, ct);
         await ReadLinesAsync(order, filePath, ct);
 
         return order;
@@ -220,17 +252,70 @@ public sealed class ImageExtractor
         }
     };
 
+    /// <summary>
+    /// يقرأ رأس الورقة: رقم أمر الشراء والفرع والتاريخ.
+    ///
+    /// وبثقةٍ دون اليقين: هذه قراءةٌ ضوئية لا نصٌّ مضمون كما في PDF، فتُعرض
+    /// في الشاشة مع مصدرها ليؤكّدها المراجع أو يصحّحها. وأن تصل الورقة
+    /// بفرعٍ مقروءٍ يُراجَع خيرٌ من أن تصل فارغةً يُكتب كل حقلٍ فيها بيد.
+    ///
+    /// وما قُرئ من الباركود لا يُمسّ: الباركود يقينٌ والقراءة الضوئية ظنّ.
+    /// </summary>
+    private async Task ReadHeaderAsync(ExtractedOrder order, string filePath, CancellationToken ct)
+    {
+        if (!_ocr.IsAvailable) return;
+
+        IReadOnlyList<OcrHeaderCell> cells;
+
+        try { cells = await _ocr.ReadHeaderAsync(filePath, ct); }
+        catch (Exception) { return; }   // الرأس تحسينٌ لا شرط: تعثّره لا يُفشل الاستخراج
+
+        var header = new DocumentHeaderReader().Read(cells);
+        if (header.IsEmpty) return;
+
+        if (header.PoNumber is { } po && !order.CustomerPoNumber.HasValue)
+            order.CustomerPoNumber = FieldValue<string>.Probable(po, 0.6, po);
+
+        if (header.Branch is { } branch)
+            order.BranchLabel = FieldValue<string>.Probable(branch, 0.6, branch);
+
+        if (header.OrderDate is { } raw && TryDate(raw) is { } date)
+            order.OrderDate = FieldValue<DateTime>.Probable(date, 0.6, raw);
+    }
+
+    /// <summary>
+    /// التاريخ بصيغة يوم/شهر/سنة أولاً.
+    ///
+    /// أوراقهم مصريّة، و<c>08/09/2026</c> فيها ثامن سبتمبر لا الثامن من
+    /// سبتمبر عند الأمريكيين. والخطأ هنا يزحزح تاريخ التسليم شهراً.
+    /// </summary>
+    private static DateTime? TryDate(string raw)
+    {
+        string[] formats = { "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "yyyy-MM-dd" };
+
+        return DateTime.TryParseExact(raw, formats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var value) ? value : null;
+    }
+
     private async Task ReadLinesAsync(ExtractedOrder order, string filePath, CancellationToken ct)
     {
         if (!_ocr.IsAvailable)
         {
+            // السبب يُقال بعينه لا وصفاً عاماً: «غير مهيّأ» تصف ثلاث حالات
+            // مختلفة — إعدادٌ مغلق، أو ملف لغةٍ ناقص، أو مكتبةٌ أصلية لا
+            // تُحمَّل — ولكلٍّ علاجٌ آخر. والوصف العام يُحيل من يقرؤه إلى
+            // البحث، وقد كلّف ذلك أياماً على الخادم.
+            var status = _ocr.Status;
+
             order.Issues.Add(new ValidationIssue
             {
                 Code = "OCR_NOT_CONFIGURED",
-                Message = "لا يوجد محرك تعرّف ضوئي مهيّأ، فلم تُقرأ بنود الجدول. " +
-                          "يُضبط المحرك من قسم Ocr في ملف الإعدادات: المحلي يلزمه " +
-                          "ملف اللغة في مجلد tessdata، والبديل السحابي يلزمه مفتاح " +
-                          "في متغير البيئة ANTHROPIC_API_KEY.",
+                Message = $"محرك القراءة «{status.Name}» لا يعمل، فلم تُقرأ بنود الجدول. "
+                        + (status.Reason ?? "لم يُذكر سبب.")
+                        + (status.Detail is { } detail ? $" ({detail})" : "")
+                        + (status.Fallback is { } fallback && !fallback.Available
+                            ? $" والبديل «{fallback.Name}» مقفول كذلك: {fallback.Reason}"
+                            : ""),
                 Severity = IssueSeverity.Blocking
             });
             return;
@@ -247,8 +332,12 @@ public sealed class ImageExtractor
             order.Issues.Add(new ValidationIssue
             {
                 Code = "LINES_MISSING",
-                Message = $"قُرئ {lines.Count} بند، وبقي {table.RowsWithoutCode} صفٍّ في الجدول "
-                        + "يحمل كميةً ولم يُقرأ رمزه. قابِل الورقة بالشاشة وأضف الناقص.",
+                // «على الأقل» ليست تلطّفاً: الصفّ لا يُعدّ ناقصاً إلا إذا
+                // قُرئت كميته، والصفّ الذي ضاع كله لا يُعدّ. فالرقم أرضيةٌ
+                // لا حصر، والادعاء بأنه حصرٌ يطمئن المراجع في غير موضعه.
+                Message = $"قُرئ {lines.Count} بند، وفي الجدول {table.RowsWithoutCode} صفٍّ على الأقل "
+                        + "يحمل كميةً ولم يُقرأ رمزه. قابِل الورقة بالشاشة سطراً سطراً "
+                        + "وأضف الناقص — قد يكون الناقص أكثر.",
                 Severity = IssueSeverity.Blocking
             });
 

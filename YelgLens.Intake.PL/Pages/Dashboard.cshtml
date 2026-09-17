@@ -1,4 +1,4 @@
-@page "/Dashboard"
+﻿@page "/Dashboard"
 @using YelgLens.Intake.BLL.Services.Review
 @model YelgLens.Intake.PL.Pages.DashboardModel
 @{
@@ -106,6 +106,42 @@
     .all-clear { padding:var(--space-6); text-align:center; color:var(--color-success);
                  font-size:var(--text-body-sm); }
 </style>
+
+@if (!Model.Ocr.Available || Model.Ocr.Fallback is { Available: true })
+{
+    <div class="alert @(Model.Ocr.Available ? "alert-warning" : "alert-error")" role="status"
+         style="margin-bottom:var(--space-4);flex-direction:column;align-items:flex-start;gap:var(--space-1);">
+        <strong>
+            قراءة الصور: @Model.Ocr.Name —
+            @(Model.Ocr.Available ? "يعمل" : "لا يعمل")
+        </strong>
+
+        @if (Model.Ocr.Reason is { } reason)
+        {
+            <span class="t-body-sm">@reason</span>
+        }
+
+        @if (Model.Ocr.Detail is { } detail)
+        {
+            <span class="t-caption muted mono">@detail</span>
+        }
+
+        @if (Model.Ocr.Fallback is { } fallback)
+        {
+            <span class="t-body-sm">
+                البديل: @fallback.Name — @(fallback.Available ? "مفعّل" : "مقفول").
+                @if (fallback.Available && !Model.Ocr.Available)
+                {
+                    <strong>كل مستند مصوَّر يخرج إلى السحابة الآن</strong><text>، لأن المحلي لا يعمل.</text>
+                }
+                else if (fallback.Available)
+                {
+                    <text>لا يُستدعى إلا إذا عجز المحلي عن ورقةٍ بعينها.</text>
+                }
+            </span>
+        }
+    </div>
+}
 
 <div class="page-head">
     <div>

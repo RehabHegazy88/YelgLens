@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Anthropic;
 using Anthropic.Models.Messages;
 using SkiaSharp;
@@ -126,6 +126,12 @@ public sealed class ClaudeOcrEngine : IOcrEngine
     }
 
     public bool IsAvailable => _settings.Enabled && ResolveKey() is not null;
+
+    public OcrStatus Status => new(
+        $"سحابي ({_settings.Model})",
+        IsAvailable,
+        IsAvailable ? null : UnavailableReason,
+        "الصورة تُرسل إلى خادم Anthropic. لا يُستدعى إلا إذا لم يخرج المحلي ببند.");
 
     /// <summary>سبب التعطّل — للرسالة التي تُعرض على المستخدم.</summary>
     public string UnavailableReason =>
@@ -343,6 +349,8 @@ public sealed class FallbackOcrEngine : IOcrEngine
     }
 
     public bool IsAvailable => _primary.IsAvailable || _fallback.IsAvailable;
+
+    public OcrStatus Status => _primary.Status with { Fallback = _fallback.Status };
 
     public async Task<IReadOnlyList<OcrLine>> ReadTableAsync(
         string imagePath, CancellationToken ct = default)

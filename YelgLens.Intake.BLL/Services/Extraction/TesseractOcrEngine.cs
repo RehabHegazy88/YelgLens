@@ -90,6 +90,12 @@ public sealed class TesseractOcrEngine : IOcrEngine
         && MissingLanguages().Count == 0
         && NativeLoads();
 
+    public OcrStatus Status => new(
+        $"محلي (Tesseract · {_settings.Languages})",
+        IsAvailable,
+        UnavailableReason,
+        $"ملفات اللغة في {_tessData}");
+
     /// <summary>سبب التعطّل، صريحاً — ليُقال في السجل وفي الشاشة.</summary>
     public string? UnavailableReason
     {
@@ -129,11 +135,16 @@ public sealed class TesseractOcrEngine : IOcrEngine
         }
         catch (Exception ex)
         {
+            // الاسم مأخوذٌ من ثابتٍ داخل الحزمة نفسها لا من تخمين: المحمِّل
+            // يطلب «tesseract50»، فيصير على لينكس «libtesseract50.so»
+            // ويُبحث عنه في مجلد x64 بجوار التطبيق. واسم حزمة النظام يختلف
+            // بين التوزيعات (libtesseract4 أو 5…)، فلا يُذكر — يُثبَّت
+            // tesseract-ocr وتُوصَل المكتبة التي جاءت معه.
             _nativeError =
-                "تعذّر تحميل مكتبة Tesseract الأصلية. حزمة NuGet تشحن مكتبات ويندوز وحدها، "
-                + "فعلى لينكس تُثبَّت من النظام: "
-                + "apt-get install -y tesseract-ocr libtesseract5 libleptonica-dev — "
-                + $"({ex.GetType().Name}: {ex.Message})";
+                "تعذّر تحميل مكتبة Tesseract الأصلية. حزمة NuGet تشحن مكتبات ويندوز وحدها "
+                + $"(x64/tesseract50.dll). على لينكس: ثبّت tesseract-ocr، ثم اربط المكتبة "
+                + $"التي جاءت معه باسم x64/libtesseract50.so بجوار التطبيق في "
+                + $"{AppContext.BaseDirectory} — {Describe(ex)}";
 
             _log.LogError(ex, "المحرك المحلي معطّل: المكتبة الأصلية لا تُحمَّل من {Path}.", _tessData);
             return (_native = false).Value;
@@ -150,9 +161,56 @@ public sealed class TesseractOcrEngine : IOcrEngine
         _settings.Languages.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     public Task<IReadOnlyList<OcrLine>> ReadTableAsync(string imagePath, CancellationToken ct = default) =>
-        Task.Run<IReadOnlyList<OcrLine>>(() => ReadTable(imagePath, ct), ct);
+        Task.Run<IReadOnlyList<OcrLine>>(() => ReadTable(imagePath, ct).Lines, ct);
 
-    private IReadOnlyList<OcrLine> ReadTable(string imagePath, CancellationToken ct)
+    public Task<OcrTable> ReadTableWithGapsAsync(string imagePath, CancellationToken ct = default) =>
+        Task.Run(() => ReadTable(imagePath, ct), ct);
+
+    public Task<IReadOnlyList<OcrHeaderCell>> ReadHeaderAsync(
+        string imagePath, CancellationToken ct = default) =>
+        Task.Run<IReadOnlyList<OcrHeaderCell>>(() => ReadHeader(imagePath, ct), ct);
+
+    /// <summary>
+    /// يقرأ ما فوق الجدول.
+    ///
+    /// وحدّ «فوق» يُشتقّ من المستند نفسه: أعلى صفٍّ يحمل باركوداً هو بداية
+    /// الجدول، وما قبله رأس. ولو لم يُقرأ باركود أصلاً يُؤخذ الثلث الأعلى —
+    /// تقديرٌ يكفي، لأن الغرض تضييق البحث لا تحديده بالبكسل.
+    /// </summary>
+    private List<OcrHeaderCell> ReadHeader(string imagePath, CancellationToken ct)
+    {
+        using var page = ImagePreprocessor.Prepare(imagePath, _settings.Upscale);
+
+        // قراءةٌ حرّة لا رقمية — بخلاف الجدول.
+        //
+        // عمود الرأس يحمل عنواناً وقيمةً رقمية، فيُصنَّف رقمياً فتُعاد قراءته
+        // بقائمة أرقامٍ بيضاء، فيُمحى العنوان نفسه: «PO NUMBER» تخرج «0».
+        // القيم كانت تُقرأ والعناوين تُمحى، فلا يبقى ما يُربط به.
+        var cells = new List<Cell>();
+        foreach (var column in page.Columns)
+        {
+            ct.ThrowIfCancellationRequested();
+            cells.AddRange(Recognize(page.Image, column, digitsOnly: false));
+        }
+
+        if (cells.Count == 0) return new List<OcrHeaderCell>();
+
+        var firstCode = cells
+            .Where(c => BarcodeToken.IsMatch(Digits(c.Text)))
+            .Select(c => (double?)c.Center)
+            .DefaultIfEmpty(null)
+            .Min();
+
+        var limit = firstCode ?? page.Image.Height / 3.0;
+
+        return cells
+            .Where(c => c.Center < limit && !string.IsNullOrWhiteSpace(c.Text))
+            .OrderBy(c => c.Center)
+            .Select(c => new OcrHeaderCell(c.Text.Trim(), c.Column, c.Center, c.Confidence))
+            .ToList();
+    }
+
+    private OcrTable ReadTable(string imagePath, CancellationToken ct)
     {
         using var page = ImagePreprocessor.Prepare(imagePath, _settings.Upscale);
         _log.LogInformation("تجهيز {File}: {W}x{H}، {Columns} عمود.",
@@ -219,7 +277,8 @@ public sealed class TesseractOcrEngine : IOcrEngine
             words.Add(new Word(
                 Text: Collapse(text),
                 Confidence: Math.Clamp(iterator.GetConfidence(PageIteratorLevel.Word) / 100.0, 0, 1),
-                Center: (box.Y1 + box.Y2) / 2.0));
+                Center: (box.Y1 + box.Y2) / 2.0,
+                Left: box.X1));
         }
         while (iterator.Next(PageIteratorLevel.Word));
 
@@ -249,7 +308,11 @@ public sealed class TesseractOcrEngine : IOcrEngine
 
         return groups
             .Select(g => new Cell(
-                Text: string.Join(" ", g.Select(w => w.Text)),
+                // تُرتَّب الكلمات بموضعها الأفقي لا بترتيب خروجها من المحرك:
+                // المحرك يعيدها أحياناً منكوسة فيخرج «Park Hyde» و«Star Seoudi
+                // Silver». الاسم المنكوس يُقرأ ويُفهم، لكنه لا يطابق شيئاً في
+                // كشف العملاء — والمطابقة هي الغرض.
+                Text: string.Join(" ", g.OrderBy(w => w.Left).Select(w => w.Text)),
                 Confidence: g.Min(w => w.Confidence),
                 Center: g.Average(w => w.Center),
                 Column: column))
@@ -264,9 +327,9 @@ public sealed class TesseractOcrEngine : IOcrEngine
     /// تباعد أكثر الأعمدة سطوراً — لا تُثبَّت رقماً، لأن ارتفاع السطر يختلف
     /// باختلاف المستند ودقة التصوير.
     /// </summary>
-    private List<OcrLine> AssembleRows(List<Cell> cells)
+    private OcrTable AssembleRows(List<Cell> cells)
     {
-        if (cells.Count == 0) return new List<OcrLine>();
+        if (cells.Count == 0) return new OcrTable(Array.Empty<OcrLine>(), 0);
 
         var tolerance = RowTolerance(cells);
         var rows = new List<List<Cell>>();
@@ -285,6 +348,7 @@ public sealed class TesseractOcrEngine : IOcrEngine
         var quantityColumn = FindQuantityColumn(rows);
 
         var lines = new List<OcrLine>();
+        var skipped = new List<List<Cell>>();
 
         foreach (var row in rows)
         {
@@ -304,7 +368,8 @@ public sealed class TesseractOcrEngine : IOcrEngine
             // داخل الباركود نفسه، فيصير «725.765711120» ولا يطابق شيئاً،
             // فيسقط البند كله لا كميته وحدها.
             var code = tokens.Select(Digits).FirstOrDefault(t => BarcodeToken.IsMatch(t));
-            if (code is null) continue;
+
+            if (code is null) { skipped.Add(row); continue; }
 
             // المكتوب بكسرٍ عشري يُقدَّم على الصحيح: عمود الكمية في أوراقهم
             // مُنسَّق بمنزلتين، والأرقام الصحيحة الأخرى في السطر جزءٌ من
@@ -343,7 +408,40 @@ public sealed class TesseractOcrEngine : IOcrEngine
                     : row.Max(c => c.Confidence)));
         }
 
-        return lines;
+        return new OcrTable(lines, CountGaps(rows, skipped, quantityColumn));
+    }
+
+    /// <summary>
+    /// كم صفٍّ بدا بنداً ولم يُقرأ رمزه.
+    ///
+    /// والدليل هو عمود الكمية: صفٌّ يحمل رقماً في العمود الذي عُرف أنه عمود
+    /// الكميات، وواقعٌ بين أول بندٍ وآخره، هو بندٌ في الورقة لم يصل إلينا.
+    /// أما ما قبل الجدول وما بعده فرأسٌ وتذييل، وعدّهما يجعل التنبيه يصيح في
+    /// كل مستند فيُتجاهل — والتنبيه الذي يُتجاهل لا يحمي من شيء.
+    /// </summary>
+    private static int CountGaps(
+        List<List<Cell>> rows, List<List<Cell>> skipped, int? quantityColumn)
+    {
+        if (quantityColumn is not { } band || skipped.Count == 0) return 0;
+
+        var body = rows
+            .Where(r => r.Any(c => BarcodeToken.IsMatch(Digits(c.Text))))
+            .SelectMany(r => r.Select(c => c.Center))
+            .ToList();
+
+        if (body.Count == 0) return 0;
+
+        var top = body.Min();
+        var bottom = body.Max();
+
+        return skipped.Count(row =>
+        {
+            var cell = row.FirstOrDefault(c => c.Column == band);
+            if (Number(Clean(cell.Text)) is null) return false;
+
+            var center = row.Average(c => c.Center);
+            return center >= top && center <= bottom;
+        });
     }
 
     /// <summary>
@@ -397,6 +495,23 @@ public sealed class TesseractOcrEngine : IOcrEngine
     /// <summary>نصّ الخلية مهيَّأً للتحليل رقماً.</summary>
     private static string? Clean(string? text) => text?.Trim().Trim('.');
 
+    /// <summary>
+    /// الاستثناء وما تحته.
+    ///
+    /// <c>TargetInvocationException</c> غلافٌ لا يقول شيئاً: نصّه «ألقى الهدف
+    /// استثناءً» والسبب الحقيقي في داخله. وطباعة الغلاف وحده تُري المستخدم
+    /// جملةً لا تدلّ على شيء — وقد وقع ذلك على الخادم فضاع وقت.
+    /// </summary>
+    private static string Describe(Exception error)
+    {
+        var chain = new List<string>();
+
+        for (var current = error; current is not null && chain.Count < 4; current = current.InnerException)
+            chain.Add($"{current.GetType().Name}: {current.Message}");
+
+        return string.Join(" ← ", chain);
+    }
+
     /// <summary>الرقم بلا نقاط — لمطابقة الباركود مهما دُسّت فيه.</summary>
     private static string Digits(string token) => token.Replace(".", "");
 
@@ -424,7 +539,8 @@ public sealed class TesseractOcrEngine : IOcrEngine
         return Math.Max(8, gaps[gaps.Count / 2] * 0.45);
     }
 
-    private readonly record struct Word(string Text, double Confidence, double Center);
+    /// <summary>كلمةٌ مقروءة، ومعها موضعها الرأسي والأفقي.</summary>
+    private readonly record struct Word(string Text, double Confidence, double Center, int Left);
     /// <summary>خليةٌ مقروءة، ومعها العمود الذي جاءت منه.</summary>
     private readonly record struct Cell(string Text, double Confidence, double Center, int Column);
 }
